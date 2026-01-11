@@ -14,20 +14,20 @@ class IssueType(str, Enum):
 class UserStoryResponse(BaseModel):
     id: int
     project_id: int
-    project_name: str
+    project_name: Optional[str] = None
     story_pointer: Optional[str] = None # Support existing
     story_code: Optional[str] = None # New standard
 
     team: Optional[TeamSimple] = None
 
-    release_number: Optional[str]
-    sprint_number: Optional[str]
+    release_number: Optional[str] = None
+    sprint_number: Optional[str] = None
 
-    assignee_id: Optional[int]
+    assignee_id: Optional[int] = None
     team_id: Optional[int] = None
 
-    assignee: str
-    reviewer: Optional[str]
+    assignee: Optional[str] = "Unassigned"
+    reviewer: Optional[str] = None
 
     title: str
     description: str

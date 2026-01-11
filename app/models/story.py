@@ -48,6 +48,7 @@ class UserStory(Base):
     project = relationship("Project", back_populates="stories")
     assignee_user = relationship("User", foreign_keys=[assignee_id])
     team = relationship("Team", back_populates="stories")
+    activities = relationship("UserStoryActivity", back_populates="story", cascade="all, delete-orphan")
 
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True) # key for RBAC ownership
     
@@ -73,5 +74,5 @@ class UserStoryActivity(Base):
     created_at = Column(TIMESTAMP, server_default=func.now(), index=True)
     
     # Relationships
-    story = relationship("UserStory", backref="activities")
+    story = relationship("UserStory", back_populates="activities")
     user = relationship("User")

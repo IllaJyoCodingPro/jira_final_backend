@@ -9,6 +9,8 @@ class ProjectResponse(BaseModel):
     project_prefix: str
     owner_id: Optional[int] = None
     owner: Optional[UserResponse] = None
+    created_at: Optional[datetime] = None
+    is_active: bool = True
 
     class Config:
         from_attributes = True

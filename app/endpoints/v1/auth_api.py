@@ -64,7 +64,8 @@ def get_all_users(
     user: User = Depends(get_current_user)
 ):
     """Retrieve all users to populate assignee lists"""
-    return db.query(User).all()
+    """Retrieve all users to populate assignee lists"""
+    return db.query(User).filter(User.email != "admin@jira.local").all()
 
 def perform_login(email: str, password: str, db: Session):
     """

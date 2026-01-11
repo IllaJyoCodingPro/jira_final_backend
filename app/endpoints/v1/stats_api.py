@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from typing import List
 
 from app.database.session import get_db
-from app.models import User, Project, ModeSwitchRequest
+from app.models import User, Project, ModeSwitchRequest, Team, UserStory
+from app.models.story import UserStoryActivity
 from app.auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/stats", tags=["Statistics"])
@@ -109,3 +110,70 @@ def get_mode_switch_history(
             "reason": r.reason
         })
     return result
+
+@router.get("/activity")
+def get_recent_activity(
+    limit: int = 50,
+    project_id: int = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    """
+    Retrieves recent activity across projects based on user role/view_mode.
+    Optionally filters by project_id.
+    """
+    query = db.query(UserStoryActivity).join(UserStory).join(Project)
+
+    if project_id:
+        query = query.filter(UserStory.project_id == project_id)
+
+    if user.is_master_admin:
+        pass # Master Admin sees all activity
+    elif user.view_mode == "ADMIN":
+        # Admin sees activity in projects they own
+        query = query.filter(Project.owner_id == user.id)
+    else:
+        # Developer sees activity in:
+        # 1. Projects they are a team member of
+        # 2. Stories they are assigned to
+        
+        # Get project IDs where user is a team member
+        member_project_ids = db.query(Team.project_id).filter(
+            Team.members.any(id=user.id)
+        ).scalar_subquery()
+        
+        query = query.filter(
+            or_(
+                Project.id.in_(member_project_ids),
+                UserStory.assignee_id == user.id
+            )
+        )
+    
+    # Eager load relationships
+    from sqlalchemy.orm import joinedload
+    activities = query.options(
+        joinedload(UserStoryActivity.user),
+        joinedload(UserStoryActivity.story).joinedload(UserStory.project)
+    ).order_by(UserStoryActivity.created_at.desc()).limit(limit).all()
+
+    return [
+        {
+            "id": a.id,
+            "action": a.action, # CREATED, UPDATED, etc.
+            "changes": a.changes,
+            "created_at": a.created_at,
+            "actor": {
+                "id": a.user.id if a.user else None,
+                "username": a.user.username if a.user else "Unknown",
+                "email": a.user.email if a.user else ""
+            },
+            "issue": {
+                "id": a.story.id,
+                "key": f"{a.story.project.project_prefix}-{a.story.story_pointer}" if a.story.project else str(a.story.id),
+                "title": a.story.title,
+                "project_id": a.story.project_id,
+                "project_name": a.story.project.name if a.story.project else "Unknown"
+            }
+        }
+        for a in activities
+    ]

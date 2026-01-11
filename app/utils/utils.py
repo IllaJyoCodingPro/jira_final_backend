@@ -7,6 +7,16 @@ def story_to_dict(s):
     Handles None checks for relationships.
     """
     if not s: return None
+    
+    # Safely get team info
+    team_info = None
+    try:
+        if s.team_id and s.team:
+            team_info = {"id": s.team.id, "name": s.team.name}
+    except Exception:
+        # Team relationship not loaded or failed to load
+        pass
+    
     return {
         "id": s.id,
         "project_id": s.project_id,
@@ -16,7 +26,7 @@ def story_to_dict(s):
         "sprint_number": s.sprint_number,
         "assignee_id": s.assignee_id,
         "team_id": s.team_id,
-        "team": {"id": s.team.id, "name": s.team.name} if s.team else None,
+        "team": team_info,
         "assignee": s.assignee,
         "reviewer": s.reviewer,
         "title": s.title,

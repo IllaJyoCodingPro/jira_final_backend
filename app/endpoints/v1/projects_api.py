@@ -37,6 +37,25 @@ def create_project(
     db.add(project)
     db.commit()
     db.refresh(project)
+
+    # AUTO-CREATE Default Team
+    default_team = Team(
+        name=f"{project.name} Core Team",
+        project_id=project.id,
+        lead_id=project.owner_id
+    )
+    db.add(default_team)
+    
+    # Add owner to team members as well
+    # Note: We need to fetch the owner object first to add to relationship if using ORM append,
+    # but for fresh object we can probably wait or just commit.
+    # Cleaner way:
+    owner = db.query(User).filter(User.id == user.id).first()
+    if owner:
+        default_team.members.append(owner)
+
+    db.commit()
+
     return project
 
 @router.put("/{id}")
@@ -50,25 +69,27 @@ def update_project(
 ):
     """
     Updates an existing project.
-    Only Admins can update. Enforces inactive project read-only logic.
+    Only project owners in ADMIN mode or master admin can update.
     """
-    if user.role != "ADMIN":
-        raise HTTPException(403, "Only admins can update projects")
-        
     project = db.query(Project).filter(Project.id == id).first()
     if not project:
         raise HTTPException(404, "Project not found")
+    
+    # Permission check
+    if not user.is_master_admin:
+        if user.view_mode != "ADMIN":
+            raise HTTPException(403, "Projects can only be updated in Admin mode.")
+        if project.owner_id != user.id:
+            raise HTTPException(403, "Only the project owner can update this project.")
         
     # Check for Inactive Lock
     if not project.is_active:
         # If project is inactive, the ONLY allowed change is to Activate it (is_active=True)
-        # If is_active is True in request, allow it.
-        # If is_active is None or False, and we are trying to change other things, Block it.
         if is_active is True:
-            # Re-activating. Allow other changes too? Maybe. But strictly, let's allow it.
+            # Re-activating. Allow other changes too
             pass
         else:
-            # Not re-activating.
+            # Not re-activating
             raise HTTPException(403, "Project is inactive. You must activate it to make changes.")
 
     if name is not None:
@@ -90,14 +111,20 @@ def delete_project(
 ):
     """
     Deletes a project and all its associated stories.
-    Only Admins can delete.
+    Only project owners in ADMIN mode or master admin can delete.
     """
-    if user.role != "ADMIN":
-        raise HTTPException(403, "Only admins can delete projects")
     project = db.query(Project).filter(Project.id == id).first()
     if not project:
         raise HTTPException(404, "Project not found")
-    # delete all stories of project
+    
+    # Permission check
+    if not user.is_master_admin:
+        if user.view_mode != "ADMIN":
+            raise HTTPException(403, "Projects can only be deleted in Admin mode.")
+        if project.owner_id != user.id:
+            raise HTTPException(403, "Only the project owner can delete this project.")
+    
+    # Delete all stories of project
     db.query(UserStory).filter(UserStory.project_id == id).delete()
     db.delete(project)
     db.commit()
@@ -111,12 +138,15 @@ def get_inactive_projects(
     """
     Retrieves inactive projects based on user role and permissions.
     """
+    from sqlalchemy.orm import joinedload
+    query = db.query(Project).options(joinedload(Project.owner))
+
     if user.is_master_admin:
         # Master Admin sees all inactive projects
-        projects = db.query(Project).filter(Project.is_active == False).all()
+        projects = query.filter(Project.is_active == False).all()
     elif user.view_mode == "ADMIN":
         # ADMIN mode: Shows inactive projects you own
-        projects = db.query(Project).filter(
+        projects = query.filter(
             Project.owner_id == user.id,
             Project.is_active == False
         ).all()
@@ -136,22 +166,13 @@ def get_inactive_projects(
             
         all_ids = list(set(assigned_project_ids + led_project_ids + team_project_ids))
         
-        projects = db.query(Project).filter(
+        projects = query.filter(
             Project.id.in_(all_ids),
             Project.owner_id != user.id,
             Project.is_active == False
         ).all()
         
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "project_prefix": p.project_prefix,
-            "owner_id": p.owner_id,
-            "is_active": p.is_active
-        }
-        for p in projects
-    ]
+    return projects
 
 @router.get("")
 def get_projects(
@@ -163,12 +184,15 @@ def get_projects(
     Admins see their owned projects.
     Developers see projects they are assigned to or members of.
     """
+    from sqlalchemy.orm import joinedload
+    query = db.query(Project).options(joinedload(Project.owner))
+
     if user.is_master_admin:
         # Master Admin sees everything
-        projects = db.query(Project).all()
+        projects = query.all()
     elif user.view_mode == "ADMIN":
         # ADMIN mode: Shows projects you own
-        projects = db.query(Project).filter(Project.owner_id == user.id).all()
+        projects = query.filter(Project.owner_id == user.id).all()
     else:
         # DEVELOPER mode: Shows projects where you're a member/assignee (excluding owned projects)
         
@@ -191,18 +215,9 @@ def get_projects(
         all_ids = list(set(assigned_project_ids + led_project_ids + team_project_ids))
         
         # Exclude projects user owns as specified
-        projects = db.query(Project).filter(
+        projects = query.filter(
             Project.id.in_(all_ids),
             Project.owner_id != user.id
         ).all()
         
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "project_prefix": p.project_prefix,
-            "owner_id": p.owner_id,
-            "is_active": p.is_active
-        }
-        for p in projects
-    ]
+    return projects
