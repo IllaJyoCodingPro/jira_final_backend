@@ -331,19 +331,49 @@ def create_user_story(
           flush=True)
 
     # Resolve assignee name deterministically:
+    # Resolve assignee name deterministically:
     if user.role == "DEVELOPER":
-        # Developers always self-assign
-        parsed_assignee_id = user.id
-        assignee = user.username
+        # Check if user is a Team Lead for the target team
+        is_team_lead = False
+        if parsed_team_id:
+            # Check if they lead THIS specific team
+            # (We can't easily query Team here without DB, but we have user.led_teams which is a list of Teams)
+            if any(t.id == parsed_team_id for t in user.led_teams):
+                is_team_lead = True
+        
+        # Also check if they are a Project Lead (leads ANY team in this project)
+        # because Project Leads should probably be able to assign to anyone in their project?
+        # Requirement says: "if a person is assigned as a team lead for a team in a specific project then the lead should have the the access to edit the issues belong to that team."
+        # And "when i create an issue by assigning a member ... it is not getting assigned"
+        # So we should allow assignment if they are a lead.
+        
+        # Check if they lead ANY team in the project
+        is_project_lead = any(t.project_id == project_id for t in user.led_teams)
+
+        if is_team_lead or is_project_lead:
+            # ALLOW assignment (do not overwrite)
+            if parsed_assignee_id:
+                 target_user = db.query(User).filter(User.id == parsed_assignee_id).first()
+                 if not target_user:
+                     raise HTTPException(400, f"Assignee user not found: id={parsed_assignee_id}")
+                 assignee = target_user.username
+            else:
+                 # If they didn't pick anyone, default to "Unassigned" or Keep as is?
+                 # If they are lead, they can leave it unassigned.
+                 if not assignee or not assignee.strip():
+                     assignee = "Unassigned"
+        else:
+            # Regular Developer: Forced Self-Assignment
+            parsed_assignee_id = user.id
+            assignee = user.username
     else:
-        # If an id was provided, resolve username from DB for correctness
+        # ADMIN / MASTER_ADMIN
         if parsed_assignee_id:
             target_user = db.query(User).filter(User.id == parsed_assignee_id).first()
             if not target_user:
                 raise HTTPException(400, f"Assignee user not found: id={parsed_assignee_id}")
             assignee = target_user.username
         else:
-            # No id provided: fall back to provided assignee string or Unassigned
             if not assignee or not assignee.strip():
                 assignee = "Unassigned"
 

@@ -1,3 +1,4 @@
+
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Form
 from sqlalchemy.orm import Session
@@ -38,23 +39,8 @@ def create_project(
     db.commit()
     db.refresh(project)
 
-    # AUTO-CREATE Default Team
-    default_team = Team(
-        name=f"{project.name} Core Team",
-        project_id=project.id,
-        lead_id=project.owner_id
-    )
-    db.add(default_team)
-    
-    # Add owner to team members as well
-    # Note: We need to fetch the owner object first to add to relationship if using ORM append,
-    # but for fresh object we can probably wait or just commit.
-    # Cleaner way:
-    owner = db.query(User).filter(User.id == user.id).first()
-    if owner:
-        default_team.members.append(owner)
-
-    db.commit()
+    # NOTE: Automatic default team creation removed by request.
+    # If you want the UI to offer creating a team, call the Teams API separately.
 
     return project
 
@@ -207,7 +193,6 @@ def get_projects(
             .all()]
         
         # Projects where user is a Team Lead or Member
-        # Get all projects from teams user is in
         team_project_ids = [t.project_id for t in user.teams]
         led_project_ids = [t.project_id for t in user.led_teams]
             
