@@ -85,49 +85,38 @@ def can_create_issue(user: User, project_id: int, team_id: int, db: Session):
         
     return False
 
-def can_update_issue(user: User, story: UserStory, db: Session):
+def can_update_issue(user: User, story: UserStory, db: Session = None):
     """
     Checks if a user can update a specific issue.
-    Respects view_mode: Users can only update in ADMIN mode if they own the project.
-    Team leads can update issues assigned to their team members within their project.
-    
+    Simplified, project-scoped rules:
+      - ADMIN/OWNER (and master admin) can update any issue
+      - DEVELOPER who leads any team in the story's project can update
+      - Regular DEVELOPER can only update issues assigned to them
+
     Args:
         user: The user
         story: The user story to update
-        db: Database session
-        
+        db: Optional database session (kept for compatibility)
+
     Returns:
         bool: True if allowed
     """
-    if not story.project.is_active:
+    # Respect inactive projects
+    if hasattr(story, 'project') and getattr(story.project, 'is_active', True) is False:
         return False
 
-    # Master admin can always update
-    if user.is_master_admin:
+    # Master admin / Admin / Owner can update
+    if user.is_master_admin or user.role in ["ADMIN", "OWNER"]:
         return True
-    
-    # Check project ownership
-    is_owner = story.project.owner_id == user.id
-    
-    # In ADMIN mode: can only update issues in projects you own
-    if user.view_mode == "ADMIN":
-        return is_owner
-    
-    # In DEVELOPER mode: cannot update issues in projects you own
-    if is_owner:
-        return False
-    
-    # ✅ Team lead can update issues for their team members in their project (regardless of role)
-    if story.team_id:
-        team = db.query(Team).filter(Team.id == story.team_id).first()
-        if team and team.lead_id == user.id and team.project_id == story.project_id:
-            # User is the team lead for this issue's team in the same project
+
+    if user.role == "DEVELOPER":
+        # Team lead override (project-scoped)
+        if any(t.project_id == story.project_id for t in getattr(user, 'led_teams', [])):
             return True
-        
-    # Developer mode: Can update if you're the assignee
-    if story.assignee_id == user.id:
-        return True
-        
+
+        # Regular developer → only own issues
+        return story.assignee_id == user.id
+
     return False
 
 def can_delete_issue(user: User, story: UserStory, db: Session):
@@ -164,61 +153,33 @@ def can_delete_issue(user: User, story: UserStory, db: Session):
             
     return False
 
-def can_view_issue(user: User, story: UserStory, db: Session):
+def can_view_issue(user: User, story: UserStory, db: Session = None):
     """
-    Checks if a user can view a specific issue.
-    Respects view_mode: Admin mode shows owned projects, Developer mode shows assigned work.
-    
+    Simplified view rules:
+      - ADMIN/OWNER (and master admin) can view any issue
+      - DEVELOPER who leads any team in the story's project can view
+      - Regular DEVELOPER can view issues assigned to them
+
     Args:
         user: The user
         story: The user story to view
-        db: Database session
-        
+        db: Optional database session (kept for compatibility)
+
     Returns:
         bool: True if allowed
     """
-    # Master admin sees everything
-    if user.is_master_admin:
-        return True
-    
-    is_owner = story.project.owner_id == user.id
-    
-    # ADMIN view mode: Only see issues in projects you own
-    if user.view_mode == "ADMIN":
-        return is_owner
-    
-    # DEVELOPER view mode: Don't see issues from projects you own
-    if is_owner:
-        return False
-        
-    # Check if user leads ANY team in this project
-    is_team_lead_in_project = (
-        db.query(Team)
-        .filter(Team.project_id == story.project_id, Team.lead_id == user.id)
-        .count() > 0
-    )
-    if is_team_lead_in_project:
-        return True
-        
-    # Team Member - view issues assigned to their team
-    if story.team_id:
-        team = db.query(Team).filter(Team.id == story.team_id).first()
-        if team and user in team.members:
-            return True
-    
-    # Directly assigned
-    if story.assignee_id == user.id:
+    # Master admin and Admin/Owner see everything
+    if user.is_master_admin or user.role in ["ADMIN", "OWNER"]:
         return True
 
-    # Assigned to ANY issue in the project
-    is_assigned_in_project = (
-        db.query(UserStory)
-        .filter(UserStory.project_id == story.project_id, UserStory.assignee_id == user.id)
-        .count() > 0
-    )
-    if is_assigned_in_project:
-        return True
-        
+    if user.role == "DEVELOPER":
+        # Team lead override (project-scoped)
+        if any(t.project_id == story.project_id for t in getattr(user, 'led_teams', [])):
+            return True
+
+        # Regular developer → only own assigned issues
+        return story.assignee_id == user.id
+
     return False
 
 def is_admin(user: User):
