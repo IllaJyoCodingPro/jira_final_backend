@@ -26,7 +26,7 @@ async def send_reset_email(email_to: str, reset_link: str):
     try:
         fm = FastMail(conf)
         await fm.send_message(message)
-        logger.info("📧 EMAIL SENT SUCCESSFULLY")
+        logger.info("EMAIL SENT SUCCESSFULLY")
 
     except Exception as e:
-        logger.error(f"❌ EMAIL FAILED: {e}")
+        logger.error(f"EMAIL FAILED: {e}")

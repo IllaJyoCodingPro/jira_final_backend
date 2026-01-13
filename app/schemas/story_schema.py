@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 from typing import Optional
 from app.schemas.project_schema import TeamSimple
+
 from app.enums import IssueType
 
 class UserStoryResponse(BaseModel):

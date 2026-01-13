@@ -12,9 +12,11 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/admin", tags=["Admin"])
+from app.constants import Roles
+from app.enums import UserRole
 
-ALLOWED_ROLES = ["ADMIN", "DEVELOPER", "TESTER", "OTHER"]
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
 
 @router.get("/users")
 def admin_get_all_users(
@@ -56,8 +58,11 @@ def update_user_role(
         raise_forbidden("Only Master Admin can change user roles")
     
     new_role = new_role.upper()
-    if new_role not in ALLOWED_ROLES:
-        raise_bad_request(f"Invalid role. Allowed roles: {ALLOWED_ROLES}")
+
+
+    if new_role not in Roles.ALL_ROLES:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Allowed roles: {Roles.ALL_ROLES}")
+
     
     user = get_object_or_404(db, User, user_id, ErrorMessages.USER_NOT_FOUND)
     
