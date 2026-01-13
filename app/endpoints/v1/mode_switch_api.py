@@ -22,7 +22,7 @@ def create_switch_request(
     """
     Submits a request to switch view mode (Admin <-> Developer).
     Notifies Master Admin.
-    """
+    """ 
     requested_mode = request_data.requested_mode
     reason = request_data.reason
     if user.is_master_admin:

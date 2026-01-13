@@ -21,7 +21,7 @@ class ErrorMessages:
     ONLY_ADMINS_PROJECT_LEADS = "Only Admins or Project Leads can perform this action"
     PROJECT_INACTIVE = "The project is inactive."
     
-    # Hierarchy
+    # Hierarchy 
     CIRCULAR_DEPENDENCY = "Circular dependency detected."
     INVALID_PARENT = "Invalid parent assignment"
 

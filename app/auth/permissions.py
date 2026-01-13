@@ -57,7 +57,6 @@ def can_create_issue(user: User, project_id: int, team_id: int, db: Session):
 def can_update_issue(user: User, story: UserStory, db: Session):
     """
     Checks if a user can update a specific issue.
-
     Rules:
       - master admin / ADMIN / OWNER => can update any issue
       - Team lead for the story's TEAM => can update any issue for that team

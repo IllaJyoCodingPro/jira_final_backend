@@ -58,7 +58,7 @@ class UserStory(Base):
     parent = relationship("UserStory", remote_side=[id], backref="children")
 
 class UserStoryActivity(Base):
-    """
+    """ 
     Aggregated activity log for user story changes.
     Each record represents ONE save action with multiple field changes.
     """

@@ -26,7 +26,7 @@ def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, 
     """
     Validates parent-child relationships between issues.
     Prevents circular dependencies and incorrect hierarchy (e.g., Epic -> Story -> Task).
-    """
+    """ 
     if not parent_id:
         # Relaxed rules: Stories and Tasks can be orphans (no parent).
         # Subtasks must still have a parent? Let's check.
