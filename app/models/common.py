@@ -11,3 +11,5 @@ class TeamMember(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
 
     created_at = Column(DateTime, server_default=func.now())
+
+team_members = TeamMember.__table__

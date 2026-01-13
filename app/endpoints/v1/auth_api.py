@@ -17,7 +17,8 @@ from app.auth.auth_utils import (
 )
 from app.auth.dependencies import get_current_user
 from app.schemas.user_schema import LoginRequest, SignupRequest
-from app.constants import ErrorMessages, Roles
+from app.constants import ErrorMessages
+from app.constants import ADMIN, DEVELOPER, MASTER_ADMIN, TESTER
 from app.exceptions import raise_bad_request, raise_unauthorized, raise_forbidden
 from app.utils.logger import get_logger
 
@@ -35,12 +36,12 @@ def signup(
     Checks if email already exists and enforces validation.
     """
     # Use localized list for signup restrictions if needed, or general constant
-    allowed_signup_roles = [Roles.DEVELOPER, Roles.TESTER]
+    allowed_signup_roles = [DEVELOPER, TESTER]
     
     if request.role not in allowed_signup_roles:
-        if request.role == Roles.ADMIN:
+        if request.role == ADMIN:
             raise_forbidden("ADMIN role cannot be chosen during signup")
-        request.role = Roles.DEVELOPER
+        request.role = DEVELOPER
     
     if db.query(User).filter(User.email == request.email).first():
         raise_bad_request(ErrorMessages.EMAIL_EXISTS)
@@ -83,8 +84,8 @@ def perform_login(email: str, password: str, db: Session):
     # Default view_mode based on role on fresh login
     if not user.is_master_admin:
         # If user is an ADMIN (promoted), default to ADMIN mode. Otherwise DEVELOPER.
-        user.view_mode = Roles.ADMIN if user.role == Roles.ADMIN else Roles.DEVELOPER
-        # db.commit() removed as per request
+        user.view_mode = ADMIN if user.role == ADMIN else DEVELOPER
+        db.commit()
     
     token = create_access_token({
         "user_id": user.id,
@@ -147,7 +148,7 @@ def switch_mode(
     if user.is_master_admin:
         raise_bad_request("Master Admin cannot switch modes")
     
-    if mode not in [Roles.ADMIN, Roles.DEVELOPER]:
+    if mode not in [ADMIN, DEVELOPER]:
         raise_bad_request(ErrorMessages.INVALID_MODE)
         
     user.view_mode = mode
@@ -203,7 +204,7 @@ def upload_avatar(
     """
     Uploads a profile picture for the current user.
     """
-    UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "avatars")
+    UPLOAD_DIR = "uploads/avatars"
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     
     file_ext = file.filename.split(".")[-1]

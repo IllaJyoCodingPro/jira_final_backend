@@ -7,7 +7,8 @@ from app.database.session import get_db
 from app.models import Project, UserStory, User, Team
 from app.schemas import ProjectResponse
 from app.auth.dependencies import get_current_user
-from app.constants import ErrorMessages, SuccessMessages, Roles
+from app.constants import ErrorMessages, SuccessMessages
+from app.constants import ADMIN, DEVELOPER
 from app.utils.common import get_object_or_404
 from app.exceptions import raise_forbidden, raise_not_found
 from app.utils.logger import get_logger
@@ -29,7 +30,7 @@ def create_project(
     """
     # Check if user is in ADMIN mode
     # Master Admin is always in ADMIN mode as per auth_api update
-    if user.view_mode != Roles.ADMIN:
+    if user.view_mode != ADMIN:
         raise_forbidden("Developers cannot create projects. Please switch to Admin Mode.")
 
     # Any user in ADMIN mode can create projects
@@ -67,7 +68,7 @@ def update_project(
     
     # Permission check
     if not user.is_master_admin:
-        if user.view_mode != Roles.ADMIN:
+        if user.view_mode != ADMIN:
             raise_forbidden("Projects can only be updated in Admin mode.")
         if project.owner_id != user.id:
             raise_forbidden("Only the project owner can update this project.")
@@ -107,7 +108,7 @@ def delete_project(
     
     # Permission check
     if not user.is_master_admin:
-        if user.view_mode != Roles.ADMIN:
+        if user.view_mode != ADMIN:
             raise_forbidden("Projects can only be deleted in Admin mode.")
         if project.owner_id != user.id:
             raise_forbidden("Only the project owner can delete this project.")
@@ -132,7 +133,7 @@ def get_inactive_projects(
     if user.is_master_admin:
         # Master Admin sees all inactive projects
         projects = query.filter(Project.is_active == False).all()
-    elif user.view_mode == Roles.ADMIN:
+    elif user.view_mode == ADMIN:
         # ADMIN mode: Shows inactive projects you own
         projects = query.filter(
             Project.owner_id == user.id,
@@ -178,7 +179,7 @@ def get_projects(
     if user.is_master_admin:
         # Master Admin sees everything
         projects = query.all()
-    elif user.view_mode == Roles.ADMIN:
+    elif user.view_mode == ADMIN:
         # ADMIN mode: Shows projects you own
         projects = query.filter(Project.owner_id == user.id).all()
     else:

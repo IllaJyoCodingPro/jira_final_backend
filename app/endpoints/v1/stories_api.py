@@ -1,153 +1,30 @@
 import os
 import shutil
-from typing import Optional, List, Union, Dict, Any
+from typing import Optional, List, Union
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, Form, UploadFile, File, Body
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import or_
-from app.database.session import get_db
-from app.models import Project, UserStory, User, Team
-from app.auth.dependencies import get_current_user
-from app.auth.permissions import can_create_issue, can_update_issue, can_view_issue
-from app.utils.activity_logger import log_activity
-from app.utils.notification_service import create_notification, notify_issue_assigned
-from app.utils.utils import story_to_dict, track_change
-from app.config.settings import settings
-from app.enums import IssueType, StoryAction, StoryStatus, Priority
-from app.constants import ErrorMessages, SuccessMessages, Roles
-from app.utils.common import get_object_or_404, check_project_active
-from app.schemas.story_schema import UserStoryActivityResponse
 
-from sqlalchemy.exc import SQLAlchemyError
+from fastapi import APIRouter, Depends, Form, UploadFile, File
+from sqlalchemy.orm import Session
+from app.database.session import get_db
+from app.models import User
+from app.auth.dependencies import get_current_user
+from app.enums import IssueType
+from app.constants import SuccessMessages
+from app.schemas.story_schema import UserStoryActivityResponse
+from app.db_utils import story_utils
 from app.utils.logger import get_logger
-from app.exceptions import (
-    raise_bad_request, raise_not_found, raise_forbidden, 
-    raise_internal_error, raise_story_not_found, raise_circular_dependency
-)
+from app.auth.permissions import can_view_issue
+from app.exceptions import raise_forbidden, raise_story_not_found
+from app.utils.common import check_project_active
+from app.utils.utils import story_to_dict
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user-stories", tags=["user-stories"])
 
-
-def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, current_issue_id: Optional[int] = None):
-    """
-    Validates parent-child relationships between issues.
-    Prevents circular dependencies and incorrect hierarchy (e.g., Epic -> Story -> Task).
-    """ 
-    if not parent_id:
-        # Relaxed rules: Stories and Tasks can be orphans (no parent).
-        # Subtasks must still have a parent? Let's check.
-        if issue_type == IssueType.SUBTASK.value:
-            raise_bad_request("Subtask must belong to a Task (parent_issue_id required).")
-        return
-
-    parent_story = db.query(UserStory).filter(UserStory.id == parent_id).first()
-    if not parent_story:
-        raise_bad_request("Parent issue not found")
-    
-    # Cycle check
-    if current_issue_id:
-        if parent_id == current_issue_id:
-            raise_bad_request("Cannot set issue as its own parent.")
-        # Walk up
-        ancestor = parent_story
-        while ancestor.parent_issue_id:
-            if ancestor.parent_issue_id == current_issue_id:
-                raise_circular_dependency()
-            ancestor = ancestor.parent  # Requires loading parent, SA relation helps
-            if not ancestor:
-                break
-            
-    ptype = parent_story.issue_type
-    
-    if issue_type == IssueType.EPIC.value:
-        raise_bad_request("Epics cannot have a parent issue.")
-    
-    if issue_type == IssueType.STORY.value and ptype != IssueType.EPIC.value:
-        raise_bad_request(f"Story must be a child of an Epic, not {ptype}.")
-        
-    if issue_type == IssueType.TASK.value and ptype != IssueType.STORY.value:
-        raise_bad_request(f"Task must be a child of a Story, not {ptype}.")
-        
-    if issue_type == IssueType.SUBTASK.value and ptype != IssueType.TASK.value:
-        raise_bad_request(f"Subtask must be a child of a Task, not {ptype}.")
-        
-    if issue_type == IssueType.BUG.value and ptype not in [IssueType.STORY.value, IssueType.TASK.value]:
-        raise_bad_request(f"Bug must be a child of a Story or Task, not {ptype}.")
-
-
-def _generate_story_code(db: Session, project_id: int) -> str:
-    """
-    Generates a unique story code in the format PREFIX-0001.
-    Handles potential collisions when multiple projects share the same prefix.
-    """
-    # Fetch Project to get prefix
-    project = get_object_or_404(db, Project, project_id, ErrorMessages.PROJECT_NOT_FOUND)
-
-    # Use project_prefix preferred, fallback to name if empty
-    prefix_raw = getattr(project, 'project_prefix', None)
-    name_raw = getattr(project, 'name', '')  # Model attribute is 'name'
-    prefix_val = prefix_raw if prefix_raw else name_raw[:2].upper()
-        
-    # Find the maximum number across ALL stories with this prefix globally
-    stories_with_prefix = db.query(UserStory)\
-        .filter(UserStory.story_pointer.like(f"{prefix_val}-%"))\
-        .all()
-
-    max_num = 0
-    for s in stories_with_prefix:
-        val = s.story_pointer
-        if val:
-            try:
-                num = int(val.split('-')[-1])
-                if num > max_num:
-                    max_num = num
-            except (ValueError, IndexError):
-                continue
-    
-    next_num = max_num + 1
-    return f"{prefix_val}-{next_num:04d}"
-
-
-# Aggregated Activity Log Helper
-def _log_activity_aggregated(db: Session, story_id: int, user_id: Optional[int], action: str, changes_dict: dict):
-    """
-    Logs changes to a story in an aggregated format (one entry per update transaction).
-    """
-    if not changes_dict and action == StoryAction.UPDATED.value:
-        return
-
-    change_lines = []
-    if action == StoryAction.CREATED.value:
-        change_lines.append("Issue Created")
-    
-    for field, vals in changes_dict.items():
-        change_lines.append(f"{field}: {vals['old']} → {vals['new']}")
-        
-    changes_text = "\n".join(change_lines)
-    
-    # Import locally to avoid circular if needed or use model directly
-    from app.models.user_story_activity import UserStoryActivity
-    
-    activity = UserStoryActivity(
-        story_id=story_id,
-        user_id=user_id,
-        action=action,
-        changes=changes_text,
-        change_count=len(changes_dict)
-    )
-    db.add(activity)
-
-
 @router.get("/types", response_model=List[str])
 def get_issue_types(user: User = Depends(get_current_user)):
-    """
-    Returns all supported issue types dynamically from the IssueType enum.
-    Single Source of Truth for frontend filters.
-    """
     return [t.value for t in IssueType]
-
 
 @router.get("/search")
 def search_stories(
@@ -155,34 +32,8 @@ def search_stories(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Search stories by title or story_pointer (Key).
-    """
-    query = db.query(UserStory).filter(
-        or_(
-            UserStory.title.ilike(f"%{q}%"),
-            UserStory.story_pointer.ilike(f"%{q}%"),
-        )
-    )
-    
-    # Permissions checks (simplified for search, generally if you have access to project you see it)
-    if user.role != Roles.ADMIN:
-        led_ids = [t.project_id for t in user.led_teams]
-        member_team_ids = [t.id for t in user.teams]
-        assigned_project_ids = [pid[0] for pid in db.query(UserStory.project_id).filter(UserStory.assignee_id == user.id).distinct().all()]
-        
-        query = query.filter(
-            or_(
-                UserStory.assignee_id == user.id,
-                UserStory.team_id.in_(member_team_ids),
-                UserStory.project_id.in_(led_ids),
-                UserStory.project_id.in_(assigned_project_ids)
-            )
-        )
-        
-    results = query.limit(50).all()
+    results = story_utils.search_stories(db, user, q)
     return [story_to_dict(s) for s in results]
-
 
 @router.get("/available-parents")
 def get_available_parents(
@@ -192,84 +43,15 @@ def get_available_parents(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Returns a list of potential parent issues based on the child's issue type.
-    """
-    logger.debug(f"get_available_parents called with project_id={project_id}, issue_type={issue_type}")
-    
-    # Check project access
-    project = get_object_or_404(db, Project, project_id, ErrorMessages.PROJECT_NOT_FOUND)
-    
-    is_owner = project.owner_id == user.id
-    
-    # Permission check based on view_mode
-    if not user.is_master_admin:
-        if user.view_mode == Roles.ADMIN and not is_owner:
-            raise_forbidden()
-        elif user.view_mode == Roles.DEVELOPER and is_owner:
-            raise_forbidden()
-    
-    target_type = None
-    if issue_type == IssueType.STORY.value:
-        target_type = IssueType.EPIC.value
-    elif issue_type == IssueType.TASK.value:
-        target_type = IssueType.STORY.value
-    elif issue_type == IssueType.SUBTASK.value:
-        target_type = IssueType.TASK.value
-    elif issue_type == IssueType.BUG.value:
-        # Bugs can be child of Story or Task
-        query = db.query(UserStory).filter(
-            UserStory.project_id == project_id,
-            UserStory.issue_type.in_([IssueType.STORY.value, IssueType.TASK.value])
-        )
-        if exclude_id:
-            query = query.filter(UserStory.id != exclude_id)
-        results = query.all()
-        print(f"DEBUG: Found {len(results)} parents of type Story/Task for Bug", flush=True)
-        return [{"id": s.id, "title": s.title, "story_code": s.story_pointer} for s in results]
-    
-    if not target_type:
-        return []
-        
-    query = db.query(UserStory).filter(
-        UserStory.project_id == project_id,
-        UserStory.issue_type == target_type
-    )
-    
-    if exclude_id:
-        query = query.filter(UserStory.id != exclude_id)
-    
-    results = query.all()
-    print(f"DEBUG: Found {len(results)} parents of type {target_type}", flush=True)
+    results = story_utils.get_available_parents(db, user, project_id, issue_type, exclude_id)
     return [{"id": s.id, "title": s.title, "story_code": s.story_pointer} for s in results]
-
 
 @router.get("/epics/all", response_model=List[dict])
 def get_all_epics(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Returns all Epics visible to the user across all projects.
-    Used for Global Create Issue (Navbar).
-    """
-    query = db.query(UserStory).join(Project).filter(UserStory.issue_type == IssueType.EPIC.value)
-    
-    # Filter by user access
-    if not user.is_master_admin:
-        # Get list ofproject IDs user is part of (via teams)
-        member_project_ids = db.query(Team.project_id).filter(
-            Team.members.any(id=user.id)
-        ).subquery()
-        
-        query = query.filter(
-            or_(
-                Project.owner_id == user.id,
-                Project.id.in_(member_project_ids)
-            )
-        )
-    
-    epics = query.all()
+    epics = story_utils.get_epics(db, user)
     return [{
         "id": e.id, 
         "title": e.title, 
@@ -278,183 +60,70 @@ def get_all_epics(
         "project_name": e.project_name
     } for e in epics]
 
-
 @router.post("")
 def create_user_story(
     project_id: int = Form(...),
     release_number: Optional[str] = Form(None),
     sprint_number: Optional[str] = Form(None),
     assignee: str = Form(...),
-    assignee_id: Optional[str] = Form(None),  # kept for backward compatibility
-    assigned_to: Optional[str] = Form(None),  # NEW: frontend 'assigned_to'
+    assignee_id: Optional[str] = Form(None),
+    assigned_to: Optional[str] = Form(None),
     reviewer: Optional[str] = Form(None),
     title: str = Form(...),
     description: str = Form(...),
     issue_type: Optional[IssueType] = Form(None),
     priority: Optional[str] = Form(None),
     status: str = Form(...),
-    # support_doc can come as empty string from some clients if not selected
     support_doc: Optional[Union[UploadFile, str]] = File(None), 
     start_date: Optional[date] = Form(None),
     end_date: Optional[date] = Form(None),
-    team_id: Optional[str] = Form(None), # Changed to str
-    parent_issue_id: Optional[str] = Form(None), # Changed to str
+    team_id: Optional[str] = Form(None),
+    parent_issue_id: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Creates a new user story/issue.
-    Validates permissions, hierarchy, and handles file uploads.
-    """
-    # Manual conversion for empty strings (robust)
     def parse_optional_int(val):
-        if val is None:
-            return None
-        if not val or (isinstance(val, str) and not val.strip()):
-            return None
-        try:
-            return int(val)
-        except Exception:
-            return None
+        if val is None: return None
+        if not val or (isinstance(val, str) and not val.strip()): return None
+        try: return int(val)
+        except: return None
 
-    # Prefer 'assigned_to' (frontend) when present, else fall back to assignee_id
-    parsed_assignee_id = parse_optional_int(assigned_to) if assigned_to is not None else parse_optional_int(assignee_id)
-    parsed_team_id = parse_optional_int(team_id)
-    parsed_parent_issue_id = parse_optional_int(parent_issue_id)
+    p_assignee_id = parse_optional_int(assigned_to) if assigned_to is not None else parse_optional_int(assignee_id)
+    p_team_id = parse_optional_int(team_id)
+    p_parent_id = parse_optional_int(parent_issue_id)
     
-    # Handle support_doc if it's a string (empty)
-    actual_support_doc = support_doc if isinstance(support_doc, UploadFile) else None
-
-    # Debug log incoming values
-    logger.debug(f"create_user_story inputs: assignee={assignee!r}, assignee_id={assignee_id!r}, assigned_to={assigned_to!r}, parsed_assignee_id={parsed_assignee_id!r}, team_id={team_id!r}, parsed_team_id={parsed_team_id!r}, creator_id={user.id}")
-
-    # Resolve assignee and permissions
-    if user.role == Roles.DEVELOPER:
-        is_team_lead = False
-        if parsed_team_id:
-            if any(t.id == parsed_team_id for t in user.led_teams):
-                is_team_lead = True
-        
-        is_project_lead = any(t.project_id == project_id for t in user.led_teams)
-
-        if is_team_lead or is_project_lead:
-            # ALLOW assignment
-            if parsed_assignee_id:
-                 target_user = get_object_or_404(db, User, parsed_assignee_id, ErrorMessages.USER_NOT_FOUND)
-                 assignee = target_user.username
-            else:
-                 if not assignee or not assignee.strip():
-                     assignee = "Unassigned"
-        else:
-            # Regular Developer: Forced Self-Assignment
-            parsed_assignee_id = user.id
-            assignee = user.username
-    else:
-        # ADMIN / MASTER_ADMIN
-        if parsed_assignee_id:
-            target_user = get_object_or_404(db, User, parsed_assignee_id, ErrorMessages.USER_NOT_FOUND)
-            assignee = target_user.username
-        else:
-            if not assignee or not assignee.strip():
-                assignee = "Unassigned"
-
-    project = get_object_or_404(db, Project, project_id, ErrorMessages.PROJECT_NOT_FOUND)
-    check_project_active(project.is_active)
-
-    # Permission Check
-    if not can_create_issue(user, project_id, parsed_team_id, db):
-        is_owner = project.owner_id == user.id
-        if user.view_mode == Roles.DEVELOPER and is_owner:
-            msg = "Project owners must switch to Admin mode to create issues in their own projects."
-        elif user.view_mode == Roles.ADMIN and not is_owner:
-            msg = "In Admin mode, you can only create issues in projects you own."
-        else:
-            msg = ErrorMessages.NO_PERMISSION_CREATE
-        raise_forbidden(msg)
-
-    # Hierarchy Logic
-    type_str = issue_type.value if issue_type else None
-    _validate_hierarchy(db, parsed_parent_issue_id, type_str)
-
-    # Generate Code
-    try:
-        story_code = _generate_story_code(db, project_id)
-    except ValueError as e:
-        raise_bad_request(str(e))
-
-    # Save File
     file_path = None
-    if actual_support_doc:
+    if isinstance(support_doc, UploadFile):
         UPLOAD_DIR = "uploads"
         os.makedirs(UPLOAD_DIR, exist_ok=True)
-        file_path = f"{UPLOAD_DIR}/{actual_support_doc.filename}"
+        file_path = f"{UPLOAD_DIR}/{support_doc.filename}"
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(actual_support_doc.file, buffer)
+            shutil.copyfileobj(support_doc.file, buffer)
 
-    try:
-        # If assignee is provided and team is selected, ensure the assignee is a member of the team
-        if parsed_assignee_id and parsed_team_id:
-            team = get_object_or_404(db, Team, parsed_team_id, ErrorMessages.TEAM_NOT_FOUND)
+    data = {
+        "project_id": project_id,
+        "release_number": release_number,
+        "sprint_number": sprint_number,
+        "assignee_id": p_assignee_id,
+        "assignee_name": assignee,
+        "reviewer": reviewer,
+        "title": title,
+        "description": description,
+        "issue_type": issue_type.value if issue_type else None,
+        "priority": priority,
+        "status": status,
+        "start_date": start_date,
+        "end_date": end_date,
+        "team_id": p_team_id,
+        "parent_issue_id": p_parent_id
+    }
 
-            # If user is not a member of the team, add them (auto-sync)
-            member_ids = [m.id for m in (team.members or [])]
-            if parsed_assignee_id not in member_ids:
-                target_user = get_object_or_404(db, User, parsed_assignee_id, ErrorMessages.USER_NOT_FOUND)
-                logger.debug(f"Adding user {parsed_assignee_id} to team {parsed_team_id} before create")
-                team.members.append(target_user)
-                db.add(team)
-                db.flush()
-
-        new_story = UserStory(
-            project_id=project_id,
-            release_number=release_number,
-            sprint_number=sprint_number,
-            story_pointer=story_code,
-            assignee=assignee,
-            assignee_id=parsed_assignee_id,
-            reviewer=reviewer,
-            title=title,
-            description=description,
-            issue_type=issue_type.value if issue_type else None,
-            priority=priority,
-            status=status,
-            support_doc=str(file_path) if file_path else None,
-            start_date=start_date,
-            end_date=end_date,
-            team_id=parsed_team_id,
-            parent_issue_id=parsed_parent_issue_id,
-            created_by=user.id,
-            project_name=project.name,
-        )
-
-        db.add(new_story)
-        db.flush()
-        db.refresh(new_story)
-        
-        # Log Creation
-        _log_activity_aggregated(db, new_story.id, user.id, StoryAction.CREATED.value, {"Status": {"old": "None", "new": status}})
-        
-        if new_story.assignee_id:
-            notify_issue_assigned(db, new_story.assignee_id, new_story.title)
-
-        # db.commit() removed as per request
-        db.refresh(new_story)
-
-        return story_to_dict(new_story)
-    except Exception as e:
-        logger.error(f"ERROR in create_user_story: {str(e)}", exc_info=True)
-        db.rollback()
-        raise_internal_error(f"Error creating user story: {str(e)}")
-
+    new_story = story_utils.create_story(db, user, data, file_path)
+    return story_to_dict(new_story)
 
 @router.get("/{id}/history", response_model=List[UserStoryActivityResponse])
 def get_story_history(id: int, db: Session = Depends(get_db)):
-    """
-    Retrieves the activity history of a story.
-    """
-    from app.models.user_story_activity import UserStoryActivity
-    return db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
-
+    return story_utils.get_user_story_activities(db, id)
 
 @router.get("/{id}")
 def get_story_by_id(
@@ -462,16 +131,14 @@ def get_story_by_id(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Retrieves a specific story by ID.
-    """
-    story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
-
+    story = story_utils.get_story_by_id(db, id)
+    if not story:
+        raise_story_not_found()
+    
     if not can_view_issue(user, story, db):
-        logger.debug(f"get_story_by_id: permission denied for user={user.id} to view story={id}")
         raise_forbidden()
+        
     return story_to_dict(story)
-
 
 @router.put("/{id}")
 def update_story(
@@ -480,28 +147,17 @@ def update_story(
     description: Optional[str] = Form(None),
     sprint_number: Optional[str] = Form(None),
     assignee: Optional[str] = Form(None),
-    assignee_id: Optional[str] = Form(None), # str to handle empty
+    assignee_id: Optional[str] = Form(None),
     reviewer: Optional[str] = Form(None),
     status: Optional[str] = Form(None),
-    parent_issue_id: Optional[str] = Form(None), # str
-    start_date: Optional[str] = Form(None), # Expecting "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM"
+    parent_issue_id: Optional[str] = Form(None),
+    start_date: Optional[str] = Form(None),
     end_date: Optional[str] = Form(None),
     priority: Optional[str] = Form(None),
     issue_type: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Updates an existing story.
-    Logs activity and sends notifications for key changes.
-    """
-    story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
-    check_project_active(story.project.is_active)
-    
-    if not can_update_issue(user, story, db):
-        raise_forbidden(ErrorMessages.NO_PERMISSION_EDIT)
-    
-    # Manual Data Construction from Form
     def clean_str(val):
         if val == "" or val == "null" or val == "undefined": return None
         return val
@@ -511,103 +167,31 @@ def update_story(
         try: return int(val)
         except: return None
     
-    # Clean Date Logic
     def parse_date_str(dstr):
         if not dstr: return None
         return dstr[:10]
 
-    update_data = {}
-    if title is not None: update_data['title'] = title
-    if description is not None: update_data['description'] = description
-    if sprint_number is not None: update_data['sprint_number'] = clean_str(sprint_number)
-    if assignee is not None: update_data['assignee'] = assignee
-    if assignee_id is not None: update_data['assignee_id'] = clean_int(assignee_id)
-    if reviewer is not None: update_data['reviewer'] = clean_str(reviewer)
-    if status is not None: update_data['status'] = status
-    if parent_issue_id is not None: update_data['parent_issue_id'] = clean_int(parent_issue_id)
-    if priority is not None: update_data['priority'] = priority
-    if issue_type is not None: update_data['issue_type'] = issue_type
+    updates = {}
+    if title is not None: updates['title'] = title
+    if description is not None: updates['description'] = description
+    if sprint_number is not None: updates['sprint_number'] = clean_str(sprint_number)
+    if assignee is not None: updates['assignee'] = assignee
+    if assignee_id is not None: updates['assignee_id'] = clean_int(assignee_id)
+    if reviewer is not None: updates['reviewer'] = clean_str(reviewer)
+    if status is not None: updates['status'] = status
+    if parent_issue_id is not None: updates['parent_issue_id'] = clean_int(parent_issue_id)
+    if priority is not None: updates['priority'] = priority
+    if issue_type is not None: updates['issue_type'] = issue_type
     
     if start_date is not None:
          dval = parse_date_str(start_date)
-         update_data['start_date'] = datetime.strptime(dval, "%Y-%m-%d").date() if dval else None
+         updates['start_date'] = datetime.strptime(dval, "%Y-%m-%d").date() if dval else None
     if end_date is not None:
          dval = parse_date_str(end_date)
-         update_data['end_date'] = datetime.strptime(dval, "%Y-%m-%d").date() if dval else None
+         updates['end_date'] = datetime.strptime(dval, "%Y-%m-%d").date() if dval else None
 
-    # ENFORCE DEVELOPER RESTRICTIONS
-    if user.role == Roles.DEVELOPER:
-        if 'assignee' in update_data:
-            del update_data['assignee']
-        if 'assignee_id' in update_data:
-            del update_data['assignee_id']
-
-    changes = {}
-    
-    # 0. Handle Parent Issue Hierarchy
-    if 'parent_issue_id' in update_data:
-        new_parent_id = update_data['parent_issue_id']
-        if new_parent_id != story.parent_issue_id:
-             try:
-                 _validate_hierarchy(db, new_parent_id, story.issue_type, current_issue_id=story.id)
-             except Exception as e:
-                 raise_bad_request(f"{ErrorMessages.INVALID_PARENT}: {str(e)}")
-             
-             changes["parent_issue_id"] = {"old": str(story.parent_issue_id), "new": str(new_parent_id)}
-             story.parent_issue_id = new_parent_id
-
-    # 1. Status Hierarchy Check
-    if 'status' in update_data and update_data['status'] != story.status:
-        new_status = update_data['status']
-        if new_status.lower() == StoryStatus.DONE.value.lower():
-             pending_children = [
-                 child for child in story.children 
-                 if (child.status or "").lower() != StoryStatus.DONE.value.lower()
-             ]
-             if pending_children:
-                 raise_bad_request(f"Cannot mark as Done: Child issues are not Done ({len(pending_children)} pending).")
-    
-    # 2. Iterate
-    for field, new_val in update_data.items():
-        if field == "parent_issue_id": continue 
-
-        old_val = getattr(story, field, None)
-        
-        str_old = str(old_val) if old_val is not None else ""
-        str_new = str(new_val) if new_val is not None else ""
-        
-        if field in ['start_date', 'end_date']:
-             str_new = str(new_val) if new_val is not None else ""
-             
-        if str_old != str_new:
-            changes[field] = {"old": str_old, "new": str_new}
-            setattr(story, field, new_val)
-            
-            if field == "assignee_id":
-                 assignee_user = db.query(User).filter(User.id == new_val).first()
-                 story.assignee = assignee_user.username if assignee_user else "Unknown"
-                 if story.assignee_id:
-                    notify_issue_assigned(db, story.assignee_id, story.title)
-            
-            if field == "status" and story.assignee_id:
-                create_notification(db, story.assignee_id, "Status Updated", f"Story '{story.title}' is now {new_val}")
-                
-            if field == "priority" and story.assignee_id:
-                create_notification(db, story.assignee_id, "Priority Updated", f"Priority for '{story.title}' changed to {new_val}")
-
-    try:
-        db.add(story)
-        db.flush()
-        
-        _log_activity_aggregated(db, story.id, user.id, StoryAction.UPDATED.value, changes)
-        
-        # db.commit() removed as per request
-        db.refresh(story)
-        return story_to_dict(story)
-    except Exception as e:
-        db.rollback()
-        raise_internal_error(f"Update failed: {str(e)}")
-    
+    updated_story = story_utils.update_story(db, user, id, updates)
+    return story_to_dict(updated_story)
 
 @router.get("/{id}/activity")
 def get_story_activity(
@@ -615,14 +199,13 @@ def get_story_activity(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
+    story = story_utils.get_story_by_id(db, id)
+    if not story: raise_story_not_found()
     
     if not can_view_issue(user, story, db):
         raise_forbidden()
-    
-    from app.models.user_story_activity import UserStoryActivity
-    activities = db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
-    
+        
+    activities = story_utils.get_user_story_activities(db, id)
     result = []
     for act in activities:
         u = db.query(User).filter(User.id == act.user_id).first() if act.user_id else None
@@ -637,52 +220,13 @@ def get_story_activity(
         })
     return result
 
-
 @router.get("/assigned/me")
 def get_my_assigned_stories(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Retrieves stories assigned to the current user.
-    Respects view_mode: Developer mode shows assigned work (excluding owned projects).
-    """
-    # Master admin sees all assigned stories
-    if user.is_master_admin:
-        stories = db.query(UserStory)\
-            .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-            .filter(UserStory.assignee_id == user.id).all()
-        return [story_to_dict(s) for s in stories]
-    
-    # Get owned project IDs
-    owned_project_ids = [p.id for p in db.query(Project).filter(Project.owner_id == user.id).all()]
-    
-    # ADMIN mode: Only show assigned stories from owned projects
-    if user.view_mode == Roles.ADMIN:
-        if not owned_project_ids:
-            return []
-        stories = db.query(UserStory)\
-            .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-            .filter(
-                UserStory.assignee_id == user.id,
-                UserStory.project_id.in_(owned_project_ids)
-            ).all()
-    else:
-        # DEVELOPER mode: Show assigned stories excluding owned projects
-        if owned_project_ids:
-            stories = db.query(UserStory)\
-                .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-                .filter(
-                    UserStory.assignee_id == user.id,
-                    UserStory.project_id.notin_(owned_project_ids)
-                ).all()
-        else:
-            stories = db.query(UserStory)\
-                .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-                .filter(UserStory.assignee_id == user.id).all()
-    
+    stories = story_utils.get_my_assigned_stories(db, user)
     return [story_to_dict(s) for s in stories]
-
 
 @router.delete("/{id}")
 def delete_user_story(
@@ -690,18 +234,13 @@ def delete_user_story(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Deletes a story.
-    Checks for project status (read-only if inactive).
-    """
-    story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
-        
+    story = story_utils.get_story_by_id(db, id)
+    if not story: raise_story_not_found()
+    
     check_project_active(story.project.is_active)
-        
-    db.delete(story)
-    # db.commit() removed as per request
+    
+    story_utils.delete_story(db, story)
     return {"message": SuccessMessages.STORY_DELETED}
-
 
 @router.get("/project/{project_id}")
 def get_stories_by_project(
@@ -709,51 +248,5 @@ def get_stories_by_project(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
 ):
-    """
-    Retrieves all stories in a specific project.
-    Respects view_mode: Admin mode shows owned projects, Developer mode shows assigned work.
-    """
-    try:
-        # Debug: log caller and received project_id for diagnosis
-        logger.debug(f"get_stories_by_project called with project_id={project_id}, user_id={getattr(user, 'id', None)}, user_role={getattr(user, 'role', None)}, user_view_mode={getattr(user, 'view_mode', None)}")
-
-        # Master admin sees everything
-        if user.is_master_admin:
-            stories = db.query(UserStory)\
-                .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-                .filter(UserStory.project_id == project_id).all()
-            return [story_to_dict(s) for s in stories]
-        
-        # Check if user owns this project
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if not project:
-            logger.debug(f"get_stories_by_project: Project id={project_id} not found in DB")
-            raise_not_found(ErrorMessages.PROJECT_NOT_FOUND)
-        
-        is_owner = project.owner_id == user.id
-        
-        # Permission Check (mirroring get_available_parents logic?)
-        # Generally:
-        # - Admin mode: Show owned projects
-        # - Dev mode: Show projects where user is member/assignee
-        
-        # For now, keeping the original logic which was a bit loose or specific to the frontend view.
-        # But let's apply the view_mode filter as per docstring.
-        
-        query = db.query(UserStory)\
-                .options(joinedload(UserStory.team), joinedload(UserStory.project))\
-                .filter(UserStory.project_id == project_id)
-
-        if user.view_mode == Roles.ADMIN:
-            if not is_owner:
-                 # If not owner, you shouldn't see it in Admin view? 
-                 # Or maybe strictly owned?
-                 # Existing code didn't restrict hard here, but let's be consistent.
-                 pass 
-        
-        stories = query.all()
-        return [story_to_dict(s) for s in stories]
-
-    except Exception as e:
-        logger.error(f"ERROR in get_stories_by_project: {str(e)}", exc_info=True)
-        raise_internal_error()
+    stories = story_utils.get_stories_by_project(db, project_id)
+    return [story_to_dict(s) for s in stories]

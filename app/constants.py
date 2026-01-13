@@ -1,3 +1,22 @@
+from app.enums import UserRole
+
+# Roles
+ADMIN = UserRole.ADMIN.value
+DEVELOPER = UserRole.DEVELOPER.value
+MASTER_ADMIN = UserRole.MASTER_ADMIN.value
+TESTER = UserRole.TESTER.value
+
+ALLOWED_ORIGINS = [ADMIN, DEVELOPER]
+ALL_ROLES = [ADMIN, DEVELOPER, TESTER]
+
+# Backward compatibility for class-based access if needed, or just preference
+class Roles:
+    ADMIN = ADMIN
+    DEVELOPER = DEVELOPER
+    TESTER = TESTER
+    MASTER_ADMIN = MASTER_ADMIN
+    ALL_ROLES = ALL_ROLES
+
 class ErrorMessages:
     PROJECT_NOT_FOUND = "Project not found"
     STORY_NOT_FOUND = "Story not found"
@@ -30,12 +49,3 @@ class SuccessMessages:
     PROJECT_DELETED = "Project deleted successfully"
     TEAM_DELETED = "Team deleted successfully"
     STORY_DELETED = "Story deleted successfully"
-
-from app.enums import UserRole
-
-class Roles:
-    ADMIN = UserRole.ADMIN.value
-    DEVELOPER = UserRole.DEVELOPER.value
-    TESTER = UserRole.TESTER.value
-    MASTER_ADMIN = UserRole.MASTER_ADMIN.value
-    ALL_ROLES = [ADMIN, DEVELOPER, TESTER]
