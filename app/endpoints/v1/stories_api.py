@@ -8,17 +8,18 @@ from sqlalchemy.orm import Session
 from app.database.session import get_db
 from app.models import User
 from app.auth.dependencies import get_current_user
-from app.enums import IssueType
-from app.constants import SuccessMessages
+from app.auth.permissions import can_create_issue, can_update_issue, can_view_issue
+from app.utils.activity_logger import log_activity
+from app.utils.notification_service import create_notification, notify_issue_assigned
+from app.utils.utils import story_to_dict, track_change
+from app.config.settings import settings
+from app.enums import IssueType, StoryAction, StoryStatus, Priority
+from app.constants import ErrorMessages, SuccessMessages
+from app.utils.common import get_object_or_404, check_project_active
 from app.schemas.story_schema import UserStoryActivityResponse
-from app.db_utils import story_utils
-from app.utils.logger import get_logger
-from app.auth.permissions import can_view_issue
-from app.exceptions import raise_forbidden, raise_story_not_found
-from app.utils.common import check_project_active
-from app.utils.utils import story_to_dict
 
-logger = get_logger(__name__)
+from sqlalchemy.exc import SQLAlchemyError
+from app.db_utils import story_utils
 
 router = APIRouter(prefix="/user-stories", tags=["user-stories"])
 
