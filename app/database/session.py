@@ -1,11 +1,8 @@
-import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from app.config.settings import settings
 
-# Use env variable if available, else fallback to hardcoded
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:Sowji_15@localhost/user_story_db")
-
-engine = create_engine(DATABASE_URL)
+engine = create_engine(settings.DATABASE_URL)
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,

@@ -1,37 +1,46 @@
 import os
-from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-load_dotenv()
-
-class Settings:
+class Settings(BaseSettings):
     """
     Application configuration settings.
-    Loads from environment variables with defaults.
+    Loads from environment variables or .env file.
     """
-    PROJECT_NAME: str = "Jira-like Backend API"
-    PROJECT_VERSION: str = "1.0.0"
+    PROJECT_NAME: str
+    PROJECT_VERSION: str
+    PORT: int = 8000
     
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root:Sowji_15@localhost/user_story_db")
+    DATABASE_URL: str
     
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
     
-    UPLOAD_DIR: str = "uploads"
+    UPLOAD_DIR: str
     
-    ADMIN_EMAIL: str = os.getenv("ADMIN_EMAIL", "admin@jira.local")
-    ADMIN_PASSWORD: str = os.getenv("ADMIN_PASSWORD", "Admin@123")
-    ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "admin")
+    # Using str instead of EmailStr to support .local domains in development
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str
+    ADMIN_USERNAME: str
+
+    # Mail configurations
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: str
     
-    ALLOWED_ORIGINS: list = [
+    # Database and extra settings
+    ALLOWED_ORIGINS: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
 
-    # Mail Settings
-    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
-    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
-    MAIL_FROM: str = os.getenv("MAIL_FROM", "admin@jira.local")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"
+    )
 
 settings = Settings()
+
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
