@@ -13,7 +13,7 @@ from app.utils.activity_logger import log_activity
 from app.utils.notification_service import create_notification, notify_issue_assigned
 from app.utils.utils import story_to_dict, track_change
 from app.config.settings import settings
-from app.schemas.story_schema import UserStoryActivityResponse, IssueType
+from app.enums import IssueType, StoryAction, StoryStatus, Priority
 from app.constants import ErrorMessages, SuccessMessages
 from app.utils.common import get_object_or_404, check_project_active
 
@@ -30,7 +30,7 @@ def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, 
     if not parent_id:
         # Relaxed rules: Stories and Tasks can be orphans (no parent).
         # Subtasks must still have a parent? Let's check.
-        if issue_type == "Subtask":
+        if issue_type == IssueType.SUBTASK.value:
             raise HTTPException(400, "Subtask must belong to a Task (parent_issue_id required).")
         return
 
@@ -53,19 +53,19 @@ def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, 
             
     ptype = parent_story.issue_type
     
-    if issue_type == "Epic":
+    if issue_type == IssueType.EPIC.value:
         raise HTTPException(400, "Epics cannot have a parent issue.")
     
-    if issue_type == "Story" and ptype != "Epic":
+    if issue_type == IssueType.STORY.value and ptype != IssueType.EPIC.value:
         raise HTTPException(400, f"Story must be a child of an Epic, not {ptype}.")
         
-    if issue_type == "Task" and ptype != "Story":
+    if issue_type == IssueType.TASK.value and ptype != IssueType.STORY.value:
         raise HTTPException(400, f"Task must be a child of a Story, not {ptype}.")
         
-    if issue_type == "Subtask" and ptype != "Task":
+    if issue_type == IssueType.SUBTASK.value and ptype != IssueType.TASK.value:
         raise HTTPException(400, f"Subtask must be a child of a Task, not {ptype}.")
         
-    if issue_type == "Bug" and ptype not in ["Story", "Task"]:
+    if issue_type == IssueType.BUG.value and ptype not in [IssueType.STORY.value, IssueType.TASK.value]:
         raise HTTPException(400, f"Bug must be a child of a Story or Task, not {ptype}.")
 
 
@@ -107,11 +107,11 @@ def _log_activity_aggregated(db: Session, story_id: int, user_id: Optional[int],
     """
     Logs changes to a story in an aggregated format (one entry per update transaction).
     """
-    if not changes_dict and action == "UPDATED":
+    if not changes_dict and action == StoryAction.UPDATED.value:
         return
 
     change_lines = []
-    if action == "CREATED":
+    if action == StoryAction.CREATED.value:
         change_lines.append("Issue Created")
     
     for field, vals in changes_dict.items():
@@ -202,17 +202,17 @@ def get_available_parents(
             raise HTTPException(403, ErrorMessages.ACCESS_DENIED)
     
     target_type = None
-    if issue_type == "Story":
-        target_type = "Epic"
-    elif issue_type == "Task":
-        target_type = "Story"
-    elif issue_type == "Subtask":
-        target_type = "Task"
-    elif issue_type == "Bug":
+    if issue_type == IssueType.STORY.value:
+        target_type = IssueType.EPIC.value
+    elif issue_type == IssueType.TASK.value:
+        target_type = IssueType.STORY.value
+    elif issue_type == IssueType.SUBTASK.value:
+        target_type = IssueType.TASK.value
+    elif issue_type == IssueType.BUG.value:
         # Bugs can be child of Story or Task
         query = db.query(UserStory).filter(
             UserStory.project_id == project_id,
-            UserStory.issue_type.in_(["Story", "Task"])
+            UserStory.issue_type.in_([IssueType.STORY.value, IssueType.TASK.value])
         )
         if exclude_id:
             query = query.filter(UserStory.id != exclude_id)
@@ -245,7 +245,7 @@ def get_all_epics(
     Returns all Epics visible to the user across all projects.
     Used for Global Create Issue (Navbar).
     """
-    query = db.query(UserStory).join(Project).filter(UserStory.issue_type == "Epic")
+    query = db.query(UserStory).join(Project).filter(UserStory.issue_type == IssueType.EPIC.value)
     
     # Filter by user access
     if not user.is_master_admin:
@@ -432,7 +432,7 @@ def create_user_story(
         db.refresh(new_story)
         
         # Log Creation
-        _log_activity_aggregated(db, new_story.id, user.id, "CREATED", {"Status": {"old": "None", "new": status}})
+        _log_activity_aggregated(db, new_story.id, user.id, StoryAction.CREATED.value, {"Status": {"old": "None", "new": status}})
         
         if new_story.assignee_id:
             notify_issue_assigned(db, new_story.assignee_id, new_story.title)
@@ -569,10 +569,10 @@ def update_story(
     # 1. Status Hierarchy Check
     if 'status' in update_data and update_data['status'] != story.status:
         new_status = update_data['status']
-        if new_status.lower() == "done":
+        if new_status.lower() == StoryStatus.DONE.value.lower():
              pending_children = [
                  child for child in story.children 
-                 if (child.status or "").lower() != "done"
+                 if (child.status or "").lower() != StoryStatus.DONE.value.lower()
              ]
              if pending_children:
                  raise HTTPException(400, f"Cannot mark as Done: Child issues are not Done ({len(pending_children)} pending).")
@@ -609,7 +609,7 @@ def update_story(
         db.add(story)
         db.flush()
         
-        _log_activity_aggregated(db, story.id, user.id, "UPDATED", changes)
+        _log_activity_aggregated(db, story.id, user.id, StoryAction.UPDATED.value, changes)
         
         db.commit()
         db.refresh(story)

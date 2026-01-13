@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 # Use env variable if available, else fallback to hardcoded
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:Mysql%4012345@localhost/user_story_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://root:Uday%40123@localhost/user_story_db")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(

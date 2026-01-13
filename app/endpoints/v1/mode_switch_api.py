@@ -7,6 +7,7 @@ from app.database.session import get_db
 from app.models import User, ModeSwitchRequest, Notification
 from app.auth.dependencies import get_current_user
 from app.schemas.user_schema import UserResponse, ModeSwitchRequestSchema
+from app.enums import ModeSwitchStatus
 from app.constants import ErrorMessages
 from app.utils.common import get_object_or_404
 
@@ -33,7 +34,7 @@ def create_switch_request(
     # Check if there's already a pending request
     existing = db.query(ModeSwitchRequest).filter(
         ModeSwitchRequest.user_id == user.id,
-        ModeSwitchRequest.status == "PENDING"
+        ModeSwitchRequest.status == ModeSwitchStatus.PENDING.value
     ).first()
     
     if existing:
@@ -43,7 +44,7 @@ def create_switch_request(
         user_id=user.id,
         requested_mode=requested_mode,
         reason=reason,
-        status="PENDING"
+        status=ModeSwitchStatus.PENDING.value
     )
     db.add(request)
     db.commit()
@@ -74,7 +75,7 @@ def get_all_requests(
     if not user.is_master_admin:
         raise HTTPException(403, "Only Master Admin can view requests")
     
-    requests = db.query(ModeSwitchRequest).filter(ModeSwitchRequest.status == "PENDING").all()
+    requests = db.query(ModeSwitchRequest).filter(ModeSwitchRequest.status == ModeSwitchStatus.PENDING.value).all()
     
     # Enrich with user info manually or use a schema
     result = []
@@ -107,14 +108,14 @@ def approve_request(
     
     request = get_object_or_404(db, ModeSwitchRequest, request_id, ErrorMessages.REQUEST_NOT_FOUND)
     
-    if request.status != "PENDING":
+    if request.status != ModeSwitchStatus.PENDING.value:
         raise HTTPException(400, f"Request is already {request.status}")
 
     # Update User Mode and Role
     target_user = request.user
     target_user.role = request.requested_mode
     target_user.view_mode = request.requested_mode
-    request.status = "APPROVED"
+    request.status = ModeSwitchStatus.APPROVED.value
     
     # Create Notification
     notification = Notification(
@@ -142,10 +143,10 @@ def reject_request(
     
     request = get_object_or_404(db, ModeSwitchRequest, request_id, ErrorMessages.REQUEST_NOT_FOUND)
     
-    if request.status != "PENDING":
+    if request.status != ModeSwitchStatus.PENDING.value:
         raise HTTPException(400, f"Request is already {request.status}")
 
-    request.status = "REJECTED"
+    request.status = ModeSwitchStatus.REJECTED.value
     
     # Create Notification
     notification = Notification(

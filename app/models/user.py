@@ -4,6 +4,7 @@ from sqlalchemy.sql import func
 from datetime import datetime
 from app.database.base import Base
 from app.models.common import team_members
+from app.enums import UserRole
 
 class User(Base):
     __tablename__ = "users"
@@ -13,8 +14,8 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     profile_pic = Column(String(255), nullable=True)
-    role = Column(String(20), default="DEVELOPER")
-    _view_mode = Column("view_mode", String(20), default="DEVELOPER")
+    role = Column(String(20), default=UserRole.DEVELOPER.value)
+    _view_mode = Column("view_mode", String(20), default=UserRole.DEVELOPER.value)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     @property
@@ -24,7 +25,7 @@ class User(Base):
     @property
     def view_mode(self) -> str:
         if self.is_master_admin:
-            return "ADMIN"
+            return UserRole.ADMIN.value
         return self._view_mode
 
     @view_mode.setter

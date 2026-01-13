@@ -2,14 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import datetime, date
 from typing import Optional
 from app.schemas.project_schema import TeamSimple
-from enum import Enum
-
-class IssueType(str, Enum):
-    epic = "Epic"
-    story = "Story"
-    task = "Task"
-    bug = "Bug"
-    subtask = "Subtask"
+from app.enums import IssueType
 
 class UserStoryResponse(BaseModel):
     id: int

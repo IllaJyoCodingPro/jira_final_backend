@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Text, ForeignKey, TIMESTAMP, Dat
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.base import Base
+from app.enums import Priority, StoryAction
 
 class UserStory(Base):
     __tablename__ = "user_story"
@@ -34,7 +35,7 @@ class UserStory(Base):
     description = Column(Text, nullable=False)
 
     issue_type = Column(String(50), nullable=True)
-    priority = Column(String(50), nullable=True, default="Medium")
+    priority = Column(String(50), nullable=True, default=Priority.MEDIUM.value)
     status = Column(String(50), nullable=True)
 
     support_doc = Column(String(255), nullable=True)
@@ -67,7 +68,7 @@ class UserStoryActivity(Base):
     story_id = Column(Integer, ForeignKey("user_story.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     
-    action = Column(String(50), nullable=False, default="UPDATED")  # UPDATED, CREATED, STATUS_CHANGED, etc.
+    action = Column(String(50), nullable=False, default=StoryAction.UPDATED.value)  # UPDATED, CREATED, STATUS_CHANGED, etc.
     changes = Column(Text, nullable=False)  # Human-readable text description of changes
     change_count = Column(Integer, nullable=False, default=0)  # Number of fields changed
     

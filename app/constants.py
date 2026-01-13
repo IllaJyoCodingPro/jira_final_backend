@@ -31,9 +31,11 @@ class SuccessMessages:
     TEAM_DELETED = "Team deleted successfully"
     STORY_DELETED = "Story deleted successfully"
 
+from app.enums import UserRole
+
 class Roles:
-    ADMIN = "ADMIN"
-    DEVELOPER = "DEVELOPER"
-    TESTER = "TESTER"
-    MASTER_ADMIN = "MASTER_ADMIN"
+    ADMIN = UserRole.ADMIN.value
+    DEVELOPER = UserRole.DEVELOPER.value
+    TESTER = UserRole.TESTER.value
+    MASTER_ADMIN = UserRole.MASTER_ADMIN.value
     ALL_ROLES = [ADMIN, DEVELOPER, TESTER]
