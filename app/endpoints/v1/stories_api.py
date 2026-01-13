@@ -19,7 +19,7 @@ from app.utils.common import get_object_or_404, check_project_active
 from app.schemas.story_schema import UserStoryActivityResponse
 
 from sqlalchemy.exc import SQLAlchemyError
-from app.db_utils import story_utils
+from app.utils import story_utils
 
 router = APIRouter(prefix="/user-stories", tags=["user-stories"])
 
