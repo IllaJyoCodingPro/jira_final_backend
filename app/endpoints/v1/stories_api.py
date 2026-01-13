@@ -128,7 +128,7 @@ def _log_activity_aggregated(db: Session, story_id: int, user_id: Optional[int],
     changes_text = "\n".join(change_lines)
     
     # Import locally to avoid circular if needed or use model directly
-    from app.models.story import UserStoryActivity
+    from app.models.user_story_activity import UserStoryActivity
     
     activity = UserStoryActivity(
         story_id=story_id,
@@ -452,7 +452,7 @@ def get_story_history(id: int, db: Session = Depends(get_db)):
     """
     Retrieves the activity history of a story.
     """
-    from app.models.story import UserStoryActivity
+    from app.models.user_story_activity import UserStoryActivity
     return db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
 
 
@@ -620,7 +620,7 @@ def get_story_activity(
     if not can_view_issue(user, story, db):
         raise_forbidden()
     
-    from app.models.story import UserStoryActivity
+    from app.models.user_story_activity import UserStoryActivity
     activities = db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
     
     result = []

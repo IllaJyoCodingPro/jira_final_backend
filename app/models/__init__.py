@@ -1,18 +1,7 @@
-from app.models.user import User, PasswordResetToken, Notification
-from app.models.project import Project, Team
-from app.models.story import UserStory, UserStoryActivity
-from app.models.common import team_members
-from app.models.mode_switch_request import ModeSwitchRequest
+from app.database.base import Base
+from .user import User, PasswordResetToken, Notification
+from .project import Project, Team
+from .story import UserStory
+from .user_story_activity import UserStoryActivity
+from .mode_switch_request import ModeSwitchRequest
 
-# Export everything for easy access
-__all__ = [
-    "User",
-    "PasswordResetToken",
-    "Notification",
-    "Project",
-    "Team",
-    "UserStory",
-    "UserStoryActivity",
-    "team_members",
-    "ModeSwitchRequest"
-]

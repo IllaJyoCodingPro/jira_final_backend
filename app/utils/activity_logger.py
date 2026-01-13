@@ -1,4 +1,4 @@
-from app.models.story import UserStoryActivity
+from app.models.user_story_activity import UserStoryActivity
 from sqlalchemy.orm import Session
 from typing import Optional
 
