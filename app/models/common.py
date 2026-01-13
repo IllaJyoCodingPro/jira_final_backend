@@ -1,10 +1,13 @@
-from sqlalchemy import Column, Integer, ForeignKey, Table
+from sqlalchemy import Column, Integer, ForeignKey, Table, DateTime
+from sqlalchemy.sql import func
 from app.database.base import Base
 
 # Association Table for Team Members
-team_members = Table(
-    "team_members",
-    Base.metadata,
-    Column("team_id", Integer, ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
-    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-)
+class TeamMember(Base):
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+
+    created_at = Column(DateTime, server_default=func.now())
