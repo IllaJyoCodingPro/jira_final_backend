@@ -8,7 +8,7 @@ from app.models import User, ModeSwitchRequest, Notification
 from app.auth.dependencies import get_current_user
 from app.schemas.user_schema import UserResponse, ModeSwitchRequestSchema
 from app.enums import ModeSwitchStatus
-from app.constants import ErrorMessages
+from app.constants import ErrorMessages, Roles
 from app.utils.common import get_object_or_404
 from app.exceptions import raise_bad_request, raise_forbidden
 from app.utils.logger import get_logger
@@ -32,7 +32,7 @@ def create_switch_request(
     if user.is_master_admin:
         raise_bad_request("Master Admin does not need to request mode switches")
     
-    if requested_mode not in ["ADMIN", "DEVELOPER"]:
+    if requested_mode not in [Roles.ADMIN, Roles.DEVELOPER]:
         raise_bad_request("Invalid mode requested")
     
     # Check if there's already a pending request
@@ -51,7 +51,7 @@ def create_switch_request(
         status=ModeSwitchStatus.PENDING.value
     )
     db.add(request)
-    db.commit()
+    # db.commit() removed as per request
     db.refresh(request)
 
     # Notify Master Admin
@@ -63,7 +63,7 @@ def create_switch_request(
             message=f"User {user.username} has requested to switch to {requested_mode} mode."
         )
         db.add(notification)
-        db.commit()
+        # db.commit() removed as per request
 
     return {"message": "Request submitted successfully", "request_id": request.id}
 
@@ -129,7 +129,7 @@ def approve_request(
     )
     db.add(notification)
     
-    db.commit()
+    # db.commit() removed as per request
     return {"message": "Request approved and user mode updated"}
 
 @router.post("/reject/{request_id}")
@@ -160,5 +160,5 @@ def reject_request(
     )
     db.add(notification)
     
-    db.commit()
+    # db.commit() removed as per request
     return {"message": "Request rejected"}

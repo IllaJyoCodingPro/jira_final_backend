@@ -14,7 +14,7 @@ from app.utils.notification_service import create_notification, notify_issue_ass
 from app.utils.utils import story_to_dict, track_change
 from app.config.settings import settings
 from app.enums import IssueType, StoryAction, StoryStatus, Priority
-from app.constants import ErrorMessages, SuccessMessages
+from app.constants import ErrorMessages, SuccessMessages, Roles
 from app.utils.common import get_object_or_404, check_project_active
 from app.schemas.story_schema import UserStoryActivityResponse
 
@@ -166,7 +166,7 @@ def search_stories(
     )
     
     # Permissions checks (simplified for search, generally if you have access to project you see it)
-    if user.role != "ADMIN":
+    if user.role != Roles.ADMIN:
         led_ids = [t.project_id for t in user.led_teams]
         member_team_ids = [t.id for t in user.teams]
         assigned_project_ids = [pid[0] for pid in db.query(UserStory.project_id).filter(UserStory.assignee_id == user.id).distinct().all()]
@@ -204,9 +204,9 @@ def get_available_parents(
     
     # Permission check based on view_mode
     if not user.is_master_admin:
-        if user.view_mode == "ADMIN" and not is_owner:
+        if user.view_mode == Roles.ADMIN and not is_owner:
             raise_forbidden()
-        elif user.view_mode == "DEVELOPER" and is_owner:
+        elif user.view_mode == Roles.DEVELOPER and is_owner:
             raise_forbidden()
     
     target_type = None
@@ -329,7 +329,7 @@ def create_user_story(
     logger.debug(f"create_user_story inputs: assignee={assignee!r}, assignee_id={assignee_id!r}, assigned_to={assigned_to!r}, parsed_assignee_id={parsed_assignee_id!r}, team_id={team_id!r}, parsed_team_id={parsed_team_id!r}, creator_id={user.id}")
 
     # Resolve assignee and permissions
-    if user.role == "DEVELOPER":
+    if user.role == Roles.DEVELOPER:
         is_team_lead = False
         if parsed_team_id:
             if any(t.id == parsed_team_id for t in user.led_teams):
@@ -364,9 +364,9 @@ def create_user_story(
     # Permission Check
     if not can_create_issue(user, project_id, parsed_team_id, db):
         is_owner = project.owner_id == user.id
-        if user.view_mode == "DEVELOPER" and is_owner:
+        if user.view_mode == Roles.DEVELOPER and is_owner:
             msg = "Project owners must switch to Admin mode to create issues in their own projects."
-        elif user.view_mode == "ADMIN" and not is_owner:
+        elif user.view_mode == Roles.ADMIN and not is_owner:
             msg = "In Admin mode, you can only create issues in projects you own."
         else:
             msg = ErrorMessages.NO_PERMISSION_CREATE
@@ -437,7 +437,7 @@ def create_user_story(
         if new_story.assignee_id:
             notify_issue_assigned(db, new_story.assignee_id, new_story.title)
 
-        db.commit()
+        # db.commit() removed as per request
         db.refresh(new_story)
 
         return story_to_dict(new_story)
@@ -536,7 +536,7 @@ def update_story(
          update_data['end_date'] = datetime.strptime(dval, "%Y-%m-%d").date() if dval else None
 
     # ENFORCE DEVELOPER RESTRICTIONS
-    if user.role == "DEVELOPER":
+    if user.role == Roles.DEVELOPER:
         if 'assignee' in update_data:
             del update_data['assignee']
         if 'assignee_id' in update_data:
@@ -601,7 +601,7 @@ def update_story(
         
         _log_activity_aggregated(db, story.id, user.id, StoryAction.UPDATED.value, changes)
         
-        db.commit()
+        # db.commit() removed as per request
         db.refresh(story)
         return story_to_dict(story)
     except Exception as e:
@@ -658,7 +658,7 @@ def get_my_assigned_stories(
     owned_project_ids = [p.id for p in db.query(Project).filter(Project.owner_id == user.id).all()]
     
     # ADMIN mode: Only show assigned stories from owned projects
-    if user.view_mode == "ADMIN":
+    if user.view_mode == Roles.ADMIN:
         if not owned_project_ids:
             return []
         stories = db.query(UserStory)\
@@ -699,7 +699,7 @@ def delete_user_story(
     check_project_active(story.project.is_active)
         
     db.delete(story)
-    db.commit()
+    # db.commit() removed as per request
     return {"message": SuccessMessages.STORY_DELETED}
 
 
@@ -744,7 +744,7 @@ def get_stories_by_project(
                 .options(joinedload(UserStory.team), joinedload(UserStory.project))\
                 .filter(UserStory.project_id == project_id)
 
-        if user.view_mode == "ADMIN":
+        if user.view_mode == Roles.ADMIN:
             if not is_owner:
                  # If not owner, you shouldn't see it in Admin view? 
                  # Or maybe strictly owned?

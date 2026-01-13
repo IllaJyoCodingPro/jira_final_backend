@@ -66,11 +66,11 @@ def update_user_role(
     
     user = get_object_or_404(db, User, user_id, ErrorMessages.USER_NOT_FOUND)
     
-    if user.id == current_user.id and new_role != "ADMIN":
+    if user.id == current_user.id and new_role != Roles.ADMIN:
         raise_bad_request("Admin cannot remove their own ADMIN role")
     
     user.role = new_role
-    db.commit()
+    # db.commit() removed as per request
     return {
         "message": "User role updated successfully",
         "user_id": user.id,

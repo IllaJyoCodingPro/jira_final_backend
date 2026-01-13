@@ -7,6 +7,7 @@ from typing import List
 from app.database.session import get_db
 from app.models import User, Project, ModeSwitchRequest, Team, UserStory
 from app.models.story import UserStoryActivity
+from app.constants import Roles
 from app.auth.dependencies import get_current_user
 from app.exceptions import raise_forbidden
 from app.utils.logger import get_logger
@@ -133,7 +134,7 @@ def get_recent_activity(
 
     if user.is_master_admin:
         pass # Master Admin sees all activity
-    elif user.view_mode == "ADMIN":
+    elif user.view_mode == Roles.ADMIN:
         # Admin sees activity in projects they own
         query = query.filter(Project.owner_id == user.id)
     else:

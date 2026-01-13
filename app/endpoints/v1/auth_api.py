@@ -56,7 +56,7 @@ def signup(
     )
     
     db.add(user)
-    db.commit()
+    # db.commit() removed as per request
     db.refresh(user)
     
     return {"message": "User registered successfully"}
@@ -84,7 +84,7 @@ def perform_login(email: str, password: str, db: Session):
     if not user.is_master_admin:
         # If user is an ADMIN (promoted), default to ADMIN mode. Otherwise DEVELOPER.
         user.view_mode = Roles.ADMIN if user.role == Roles.ADMIN else Roles.DEVELOPER
-        db.commit()
+        # db.commit() removed as per request
     
     token = create_access_token({
         "user_id": user.id,
@@ -151,7 +151,7 @@ def switch_mode(
         raise_bad_request(ErrorMessages.INVALID_MODE)
         
     user.view_mode = mode
-    db.commit()
+    # db.commit() removed as per request
     return {"message": f"Switched to {mode} mode", "view_mode": user.view_mode}
 
 @router.post("/verify-password")
@@ -190,7 +190,7 @@ def update_profile(
         validate_password(password)
         user.hashed_password = hash_password(password)
     
-    db.commit()
+    # db.commit() removed as per request
     db.refresh(user)
     return user
 
@@ -214,7 +214,7 @@ def upload_avatar(
         shutil.copyfileobj(file.file, f)
     
     user.profile_pic = f"/uploads/avatars/{filename}"
-    db.commit()
+    # db.commit() removed as per request
     return {"profile_pic": user.profile_pic}
 
 @router.delete("/me/profile-pic")
@@ -226,7 +226,7 @@ def delete_profile_pic(
     Removes the current user's profile picture.
     """
     user.profile_pic = None
-    db.commit()
+    # db.commit() removed as per request
     return {"message": "Profile picture removed"}
 
 @router.post("/logout")
