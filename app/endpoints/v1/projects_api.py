@@ -1,5 +1,5 @@
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, Form
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -9,6 +9,10 @@ from app.schemas import ProjectResponse
 from app.auth.dependencies import get_current_user
 from app.constants import ErrorMessages, SuccessMessages
 from app.utils.common import get_object_or_404
+from app.exceptions import raise_forbidden, raise_not_found
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -26,7 +30,7 @@ def create_project(
     # Check if user is in ADMIN mode
     # Master Admin is always in ADMIN mode as per auth_api update
     if user.view_mode != "ADMIN":
-        raise HTTPException(status_code=403, detail="Developers cannot create projects. Please switch to Admin Mode.")
+        raise_forbidden("Developers cannot create projects. Please switch to Admin Mode.")
 
     # Any user in ADMIN mode can create projects
     project = Project(
@@ -64,9 +68,9 @@ def update_project(
     # Permission check
     if not user.is_master_admin:
         if user.view_mode != "ADMIN":
-            raise HTTPException(403, "Projects can only be updated in Admin mode.")
+            raise_forbidden("Projects can only be updated in Admin mode.")
         if project.owner_id != user.id:
-            raise HTTPException(403, "Only the project owner can update this project.")
+            raise_forbidden("Only the project owner can update this project.")
         
     # Check for Inactive Lock
     if not project.is_active:
@@ -76,7 +80,7 @@ def update_project(
             pass
         else:
             # Not re-activating
-            raise HTTPException(403, "Project is inactive. You must activate it to make changes.")
+            raise_forbidden("Project is inactive. You must activate it to make changes.")
 
     if name is not None:
         project.name = name
@@ -104,9 +108,9 @@ def delete_project(
     # Permission check
     if not user.is_master_admin:
         if user.view_mode != "ADMIN":
-            raise HTTPException(403, "Projects can only be deleted in Admin mode.")
+            raise_forbidden("Projects can only be deleted in Admin mode.")
         if project.owner_id != user.id:
-            raise HTTPException(403, "Only the project owner can delete this project.")
+            raise_forbidden("Only the project owner can delete this project.")
     
     # Delete all stories of project
     db.query(UserStory).filter(UserStory.project_id == id).delete()

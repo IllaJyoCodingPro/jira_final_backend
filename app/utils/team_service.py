@@ -1,5 +1,8 @@
 from sqlalchemy.orm import Session, joinedload
-from fastapi import HTTPException
+from app.exceptions import raise_bad_request, raise_not_found
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 from app.models import Team, User, Project
 from app.schemas import TeamCreate, TeamUpdate
 from app.constants import ErrorMessages
@@ -71,7 +74,7 @@ def create_team(db: Session, team_data: TeamCreate):
     if team_data.member_ids:
         members = db.query(User).filter(User.id.in_(team_data.member_ids)).all()
         if len(members) != len(team_data.member_ids):
-             raise HTTPException(status_code=400, detail="Some member IDs are invalid")
+             raise_bad_request("Some member IDs are invalid")
         # Use assignment for many-to-many to be more robust
         team.members = members
     
@@ -101,7 +104,7 @@ def get_team(db: Session, team_id: int):
     # We need eager loading here, so custom query still needed, but logic is simplified
     team = db.query(Team).options(joinedload(Team.members), joinedload(Team.lead)).filter(Team.id == team_id).first()
     if not team:
-        raise HTTPException(status_code=404, detail=ErrorMessages.TEAM_NOT_FOUND)
+        raise_not_found(ErrorMessages.TEAM_NOT_FOUND)
     return team_to_dict(team)
 
 def get_teams_by_project(db: Session, project_id: int):

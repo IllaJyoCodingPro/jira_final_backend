@@ -2,7 +2,7 @@ import os
 import shutil
 from datetime import datetime
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
+from fastapi import APIRouter, Depends, Form, File, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -16,9 +16,12 @@ from app.auth.auth_utils import (
     validate_lowercase_email
 )
 from app.auth.dependencies import get_current_user
-from app.config.settings import settings
 from app.schemas.user_schema import LoginRequest, SignupRequest
 from app.constants import ErrorMessages, Roles
+from app.exceptions import raise_bad_request, raise_unauthorized, raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -36,11 +39,11 @@ def signup(
     
     if request.role not in allowed_signup_roles:
         if request.role == Roles.ADMIN:
-            raise HTTPException(status_code=403, detail="ADMIN role cannot be chosen during signup")
+            raise_forbidden("ADMIN role cannot be chosen during signup")
         request.role = Roles.DEVELOPER
     
     if db.query(User).filter(User.email == request.email).first():
-        raise HTTPException(status_code=400, detail=ErrorMessages.EMAIL_EXISTS)
+        raise_bad_request(ErrorMessages.EMAIL_EXISTS)
     
     validate_password(request.password)
     validate_lowercase_email(request.email)
@@ -75,7 +78,7 @@ def perform_login(email: str, password: str, db: Session):
     """
     user = db.query(User).filter(User.email == email).first()
     if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(status_code=401, detail=ErrorMessages.INVALID_CREDENTIALS)
+        raise_unauthorized(ErrorMessages.INVALID_CREDENTIALS)
     
     # Default view_mode based on role on fresh login
     if not user.is_master_admin:
@@ -142,10 +145,10 @@ def switch_mode(
     Master Admin cannot switch modes.
     """
     if user.is_master_admin:
-        raise HTTPException(400, "Master Admin cannot switch modes")
+        raise_bad_request("Master Admin cannot switch modes")
     
     if mode not in [Roles.ADMIN, Roles.DEVELOPER]:
-        raise HTTPException(400, ErrorMessages.INVALID_MODE)
+        raise_bad_request(ErrorMessages.INVALID_MODE)
         
     user.view_mode = mode
     db.commit()
@@ -160,7 +163,7 @@ def verify_current_password(
     Verifies the current user's password (e.g., before sensitive actions).
     """
     if not verify_password(password, user.hashed_password):
-        raise HTTPException(status_code=401, detail=ErrorMessages.INVALID_PASSWORD)
+        raise_unauthorized(ErrorMessages.INVALID_PASSWORD)
     return {"valid": True}
 
 @router.put("/me")
@@ -180,9 +183,9 @@ def update_profile(
     
     if password:
         if not current_password:
-            raise HTTPException(400, "Current password is required to set a new password")
+            raise_bad_request("Current password is required to set a new password")
         if not verify_password(current_password, user.hashed_password):
-            raise HTTPException(401, ErrorMessages.INVALID_CURRENT_PASSWORD)
+            raise_unauthorized(ErrorMessages.INVALID_CURRENT_PASSWORD)
             
         validate_password(password)
         user.hashed_password = hash_password(password)

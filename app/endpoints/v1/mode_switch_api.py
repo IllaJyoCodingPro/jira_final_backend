@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Form
+from fastapi import APIRouter, Depends, Form
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
@@ -10,6 +10,10 @@ from app.schemas.user_schema import UserResponse, ModeSwitchRequestSchema
 from app.enums import ModeSwitchStatus
 from app.constants import ErrorMessages
 from app.utils.common import get_object_or_404
+from app.exceptions import raise_bad_request, raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/mode-switch", tags=["Mode Switch"])
 
@@ -26,10 +30,10 @@ def create_switch_request(
     requested_mode = request_data.requested_mode
     reason = request_data.reason
     if user.is_master_admin:
-        raise HTTPException(400, "Master Admin does not need to request mode switches")
+        raise_bad_request("Master Admin does not need to request mode switches")
     
     if requested_mode not in ["ADMIN", "DEVELOPER"]:
-        raise HTTPException(400, "Invalid mode requested")
+        raise_bad_request("Invalid mode requested")
     
     # Check if there's already a pending request
     existing = db.query(ModeSwitchRequest).filter(
@@ -38,7 +42,7 @@ def create_switch_request(
     ).first()
     
     if existing:
-        raise HTTPException(400, "You already have a pending switch request")
+        raise_bad_request("You already have a pending switch request")
 
     request = ModeSwitchRequest(
         user_id=user.id,
@@ -73,7 +77,7 @@ def get_all_requests(
     Only accessible by Master Admin.
     """
     if not user.is_master_admin:
-        raise HTTPException(403, "Only Master Admin can view requests")
+        raise_forbidden("Only Master Admin can view requests")
     
     requests = db.query(ModeSwitchRequest).filter(ModeSwitchRequest.status == ModeSwitchStatus.PENDING.value).all()
     
@@ -104,12 +108,12 @@ def approve_request(
     Only accessible by Master Admin.
     """
     if not user.is_master_admin:
-        raise HTTPException(403, "Only Master Admin can approve requests")
+        raise_forbidden("Only Master Admin can approve requests")
     
     request = get_object_or_404(db, ModeSwitchRequest, request_id, ErrorMessages.REQUEST_NOT_FOUND)
     
     if request.status != ModeSwitchStatus.PENDING.value:
-        raise HTTPException(400, f"Request is already {request.status}")
+        raise_bad_request(f"Request is already {request.status}")
 
     # Update User Mode and Role
     target_user = request.user
@@ -139,12 +143,12 @@ def reject_request(
     Only accessible by Master Admin.
     """
     if not user.is_master_admin:
-        raise HTTPException(403, "Only Master Admin can reject requests")
+        raise_forbidden("Only Master Admin can reject requests")
     
     request = get_object_or_404(db, ModeSwitchRequest, request_id, ErrorMessages.REQUEST_NOT_FOUND)
     
     if request.status != ModeSwitchStatus.PENDING.value:
-        raise HTTPException(400, f"Request is already {request.status}")
+        raise_bad_request(f"Request is already {request.status}")
 
     request.status = ModeSwitchStatus.REJECTED.value
     

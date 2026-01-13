@@ -2,12 +2,15 @@ import logging
 from datetime import datetime, timedelta
 import re
 
-from fastapi import HTTPException
 from jose import jwt
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
 from app.config.settings import settings
+from app.exceptions import raise_bad_request, raise_internal_error
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Reduce passlib noise
 logging.getLogger("passlib").setLevel(logging.ERROR)
@@ -31,34 +34,19 @@ def validate_password(password: str):
         HTTPException: If password doesn't meet requirements
     """
     if len(password) < 8:
-        raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 8 characters long"
-        )
+        raise_bad_request("Password must be at least 8 characters long")
 
     if not re.search(r"[A-Z]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one uppercase letter (A-Z)"
-        )
+        raise_bad_request("Password must contain at least one uppercase letter (A-Z)")
 
     if not re.search(r"[a-z]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one lowercase letter (a-z)"
-        )
+        raise_bad_request("Password must contain at least one lowercase letter (a-z)")
 
     if not re.search(r"[0-9]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one number (0-9)"
-        )
+        raise_bad_request("Password must contain at least one number (0-9)")
 
     if not re.search(r"[!@#$%^&*]", password):
-        raise HTTPException(
-            status_code=400,
-            detail="Password must contain at least one special character (!@#$%^&*)"
-        )
+        raise_bad_request("Password must contain at least one special character (!@#$%^&*)")
 
 def validate_lowercase_email(email: str):
     """
@@ -71,10 +59,7 @@ def validate_lowercase_email(email: str):
         HTTPException: If email contains uppercase characters
     """
     if email != email.lower():
-        raise HTTPException(
-            status_code=400,
-            detail="Email must be in lowercase"
-        )
+        raise_bad_request("Email must be in lowercase")
 
 # ---------------- PASSWORD HASHING ---------------- #
 
@@ -108,10 +93,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return pwd_context.verify(password, hashed_password)
     except UnknownHashError:
         # Database contains invalid hash
-        raise HTTPException(
-            status_code=500,
-            detail="Invalid password hash stored in database"
-        )
+        raise_internal_error("Invalid password hash stored in database")
 
 # ---------------- JWT TOKEN ---------------- #
 

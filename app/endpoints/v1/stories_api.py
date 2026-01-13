@@ -2,7 +2,7 @@ import os
 import shutil
 from typing import Optional, List, Union, Dict, Any
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, HTTPException, Form, UploadFile, File, Body
+from fastapi import APIRouter, Depends, Form, UploadFile, File, Body
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 from app.database.session import get_db
@@ -16,8 +16,16 @@ from app.config.settings import settings
 from app.enums import IssueType, StoryAction, StoryStatus, Priority
 from app.constants import ErrorMessages, SuccessMessages
 from app.utils.common import get_object_or_404, check_project_active
+from app.schemas.story_schema import UserStoryActivityResponse
 
 from sqlalchemy.exc import SQLAlchemyError
+from app.utils.logger import get_logger
+from app.exceptions import (
+    raise_bad_request, raise_not_found, raise_forbidden, 
+    raise_internal_error, raise_story_not_found, raise_circular_dependency
+)
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/user-stories", tags=["user-stories"])
 
@@ -31,22 +39,22 @@ def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, 
         # Relaxed rules: Stories and Tasks can be orphans (no parent).
         # Subtasks must still have a parent? Let's check.
         if issue_type == IssueType.SUBTASK.value:
-            raise HTTPException(400, "Subtask must belong to a Task (parent_issue_id required).")
+            raise_bad_request("Subtask must belong to a Task (parent_issue_id required).")
         return
 
     parent_story = db.query(UserStory).filter(UserStory.id == parent_id).first()
     if not parent_story:
-        raise HTTPException(400, "Parent issue not found")
+        raise_bad_request("Parent issue not found")
     
     # Cycle check
     if current_issue_id:
         if parent_id == current_issue_id:
-            raise HTTPException(400, "Cannot set issue as its own parent.")
+            raise_bad_request("Cannot set issue as its own parent.")
         # Walk up
         ancestor = parent_story
         while ancestor.parent_issue_id:
             if ancestor.parent_issue_id == current_issue_id:
-                raise HTTPException(400, ErrorMessages.CIRCULAR_DEPENDENCY)
+                raise_circular_dependency()
             ancestor = ancestor.parent  # Requires loading parent, SA relation helps
             if not ancestor:
                 break
@@ -54,19 +62,19 @@ def _validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, 
     ptype = parent_story.issue_type
     
     if issue_type == IssueType.EPIC.value:
-        raise HTTPException(400, "Epics cannot have a parent issue.")
+        raise_bad_request("Epics cannot have a parent issue.")
     
     if issue_type == IssueType.STORY.value and ptype != IssueType.EPIC.value:
-        raise HTTPException(400, f"Story must be a child of an Epic, not {ptype}.")
+        raise_bad_request(f"Story must be a child of an Epic, not {ptype}.")
         
     if issue_type == IssueType.TASK.value and ptype != IssueType.STORY.value:
-        raise HTTPException(400, f"Task must be a child of a Story, not {ptype}.")
+        raise_bad_request(f"Task must be a child of a Story, not {ptype}.")
         
     if issue_type == IssueType.SUBTASK.value and ptype != IssueType.TASK.value:
-        raise HTTPException(400, f"Subtask must be a child of a Task, not {ptype}.")
+        raise_bad_request(f"Subtask must be a child of a Task, not {ptype}.")
         
     if issue_type == IssueType.BUG.value and ptype not in [IssueType.STORY.value, IssueType.TASK.value]:
-        raise HTTPException(400, f"Bug must be a child of a Story or Task, not {ptype}.")
+        raise_bad_request(f"Bug must be a child of a Story or Task, not {ptype}.")
 
 
 def _generate_story_code(db: Session, project_id: int) -> str:
@@ -187,7 +195,7 @@ def get_available_parents(
     """
     Returns a list of potential parent issues based on the child's issue type.
     """
-    print(f"DEBUG: get_available_parents called with project_id={project_id}, issue_type={issue_type}", flush=True)
+    logger.debug(f"get_available_parents called with project_id={project_id}, issue_type={issue_type}")
     
     # Check project access
     project = get_object_or_404(db, Project, project_id, ErrorMessages.PROJECT_NOT_FOUND)
@@ -197,9 +205,9 @@ def get_available_parents(
     # Permission check based on view_mode
     if not user.is_master_admin:
         if user.view_mode == "ADMIN" and not is_owner:
-            raise HTTPException(403, ErrorMessages.ACCESS_DENIED)
+            raise_forbidden()
         elif user.view_mode == "DEVELOPER" and is_owner:
-            raise HTTPException(403, ErrorMessages.ACCESS_DENIED)
+            raise_forbidden()
     
     target_type = None
     if issue_type == IssueType.STORY.value:
@@ -318,15 +326,7 @@ def create_user_story(
     actual_support_doc = support_doc if isinstance(support_doc, UploadFile) else None
 
     # Debug log incoming values
-    print("DEBUG create_user_story inputs:",
-          f"assignee(param)={assignee!r}",
-          f"assignee_id(param)={assignee_id!r}",
-          f"assigned_to(param)={assigned_to!r}",
-          f"parsed_assignee_id={parsed_assignee_id!r}",
-          f"team_id(param)={team_id!r}",
-          f"parsed_team_id={parsed_team_id!r}",
-          f"creator_id={user.id}",
-          flush=True)
+    logger.debug(f"create_user_story inputs: assignee={assignee!r}, assignee_id={assignee_id!r}, assigned_to={assigned_to!r}, parsed_assignee_id={parsed_assignee_id!r}, team_id={team_id!r}, parsed_team_id={parsed_team_id!r}, creator_id={user.id}")
 
     # Resolve assignee and permissions
     if user.role == "DEVELOPER":
@@ -370,7 +370,7 @@ def create_user_story(
             msg = "In Admin mode, you can only create issues in projects you own."
         else:
             msg = ErrorMessages.NO_PERMISSION_CREATE
-        raise HTTPException(403, msg)
+        raise_forbidden(msg)
 
     # Hierarchy Logic
     type_str = issue_type.value if issue_type else None
@@ -380,7 +380,7 @@ def create_user_story(
     try:
         story_code = _generate_story_code(db, project_id)
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise_bad_request(str(e))
 
     # Save File
     file_path = None
@@ -400,7 +400,7 @@ def create_user_story(
             member_ids = [m.id for m in (team.members or [])]
             if parsed_assignee_id not in member_ids:
                 target_user = get_object_or_404(db, User, parsed_assignee_id, ErrorMessages.USER_NOT_FOUND)
-                print(f"DEBUG: Adding user {parsed_assignee_id} to team {parsed_team_id} before create", flush=True)
+                logger.debug(f"Adding user {parsed_assignee_id} to team {parsed_team_id} before create")
                 team.members.append(target_user)
                 db.add(team)
                 db.flush()
@@ -442,17 +442,9 @@ def create_user_story(
 
         return story_to_dict(new_story)
     except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        print(f"ERROR in create_user_story: {str(e)}", flush=True)
-        # Write to file
-        with open("backend_error.log", "a") as f:
-            f.write(f"\n--- ERROR at {datetime.now()} ---\n")
-            f.write(error_msg)
-            f.write("--------------------------------\n")
-            
+        logger.error(f"ERROR in create_user_story: {str(e)}", exc_info=True)
         db.rollback()
-        raise HTTPException(500, f"Error creating user story: {str(e)}")
+        raise_internal_error(f"Error creating user story: {str(e)}")
 
 
 @router.get("/{id}/history", response_model=List[UserStoryActivityResponse])
@@ -476,8 +468,8 @@ def get_story_by_id(
     story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
 
     if not can_view_issue(user, story, db):
-        print(f"DEBUG get_story_by_id: permission denied for user={user.id} to view story={id}", flush=True)
-        raise HTTPException(403, ErrorMessages.ACCESS_DENIED)
+        logger.debug(f"get_story_by_id: permission denied for user={user.id} to view story={id}")
+        raise_forbidden()
     return story_to_dict(story)
 
 
@@ -507,7 +499,7 @@ def update_story(
     check_project_active(story.project.is_active)
     
     if not can_update_issue(user, story, db):
-        raise HTTPException(403, ErrorMessages.NO_PERMISSION_EDIT)
+        raise_forbidden(ErrorMessages.NO_PERMISSION_EDIT)
     
     # Manual Data Construction from Form
     def clean_str(val):
@@ -558,10 +550,8 @@ def update_story(
         if new_parent_id != story.parent_issue_id:
              try:
                  _validate_hierarchy(db, new_parent_id, story.issue_type, current_issue_id=story.id)
-             except HTTPException as e:
-                 raise e
              except Exception as e:
-                 raise HTTPException(400, f"{ErrorMessages.INVALID_PARENT}: {str(e)}")
+                 raise_bad_request(f"{ErrorMessages.INVALID_PARENT}: {str(e)}")
              
              changes["parent_issue_id"] = {"old": str(story.parent_issue_id), "new": str(new_parent_id)}
              story.parent_issue_id = new_parent_id
@@ -575,7 +565,7 @@ def update_story(
                  if (child.status or "").lower() != StoryStatus.DONE.value.lower()
              ]
              if pending_children:
-                 raise HTTPException(400, f"Cannot mark as Done: Child issues are not Done ({len(pending_children)} pending).")
+                 raise_bad_request(f"Cannot mark as Done: Child issues are not Done ({len(pending_children)} pending).")
     
     # 2. Iterate
     for field, new_val in update_data.items():
@@ -616,7 +606,7 @@ def update_story(
         return story_to_dict(story)
     except Exception as e:
         db.rollback()
-        raise HTTPException(500, f"Update failed: {str(e)}")
+        raise_internal_error(f"Update failed: {str(e)}")
     
 
 @router.get("/{id}/activity")
@@ -628,7 +618,7 @@ def get_story_activity(
     story = get_object_or_404(db, UserStory, id, ErrorMessages.STORY_NOT_FOUND)
     
     if not can_view_issue(user, story, db):
-        raise HTTPException(403, ErrorMessages.ACCESS_DENIED)
+        raise_forbidden()
     
     from app.models.story import UserStoryActivity
     activities = db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
@@ -725,7 +715,7 @@ def get_stories_by_project(
     """
     try:
         # Debug: log caller and received project_id for diagnosis
-        print(f"DEBUG get_stories_by_project called with project_id={project_id}, user_id={getattr(user, 'id', None)}, user_role={getattr(user, 'role', None)}, user_view_mode={getattr(user, 'view_mode', None)}", flush=True)
+        logger.debug(f"get_stories_by_project called with project_id={project_id}, user_id={getattr(user, 'id', None)}, user_role={getattr(user, 'role', None)}, user_view_mode={getattr(user, 'view_mode', None)}")
 
         # Master admin sees everything
         if user.is_master_admin:
@@ -737,8 +727,8 @@ def get_stories_by_project(
         # Check if user owns this project
         project = db.query(Project).filter(Project.id == project_id).first()
         if not project:
-            print(f"DEBUG get_stories_by_project: Project id={project_id} not found in DB", flush=True)
-            raise HTTPException(404, ErrorMessages.PROJECT_NOT_FOUND)
+            logger.debug(f"get_stories_by_project: Project id={project_id} not found in DB")
+            raise_not_found(ErrorMessages.PROJECT_NOT_FOUND)
         
         is_owner = project.owner_id == user.id
         
@@ -765,5 +755,5 @@ def get_stories_by_project(
         return [story_to_dict(s) for s in stories]
 
     except Exception as e:
-        print(f"ERROR in get_stories_by_project: {str(e)}", flush=True)
-        raise HTTPException(500, "Internal Server Error")
+        logger.error(f"ERROR in get_stories_by_project: {str(e)}", exc_info=True)
+        raise_internal_error()

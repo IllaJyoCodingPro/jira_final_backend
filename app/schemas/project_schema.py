@@ -14,14 +14,12 @@ class ProjectResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class TeamSimple(BaseModel):
     id: int
     name: str
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class TeamBase(BaseModel):
     name: str
@@ -45,4 +43,3 @@ class TeamResponse(TeamBase):
     
     class Config:
         from_attributes = True
-        orm_mode = True

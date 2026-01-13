@@ -1,5 +1,8 @@
 from typing import Optional
 from app.utils.activity_logger import log_activity
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 def story_to_dict(s):
     """

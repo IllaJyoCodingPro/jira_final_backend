@@ -38,7 +38,6 @@ class UserStoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class UserStoryActivityResponse(BaseModel):
     """
@@ -55,7 +54,6 @@ class UserStoryActivityResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class UserStoryUpdateRequest(BaseModel):
     title: Optional[str] = None

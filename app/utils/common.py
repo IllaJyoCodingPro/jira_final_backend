@@ -1,6 +1,9 @@
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from typing import Type, TypeVar, Optional, Any
+from app.exceptions import raise_not_found, raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 T = TypeVar("T")
 
@@ -10,7 +13,7 @@ def get_object_or_404(db: Session, model: Type[T], obj_id: Any, msg: str = "Obje
     """
     obj = db.query(model).filter(model.id == obj_id).first()
     if not obj:
-        raise HTTPException(status_code=404, detail=msg)
+        raise_not_found(msg)
     return obj
 
 def check_project_active(project_is_active: bool):
@@ -19,4 +22,4 @@ def check_project_active(project_is_active: bool):
     """
     if not project_is_active:
         from app.constants import ErrorMessages
-        raise HTTPException(status_code=403, detail=ErrorMessages.PROJECT_INACTIVE)
+        raise_forbidden(ErrorMessages.PROJECT_INACTIVE)

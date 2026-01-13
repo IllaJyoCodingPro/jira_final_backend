@@ -11,7 +11,7 @@ class Settings:
     PROJECT_NAME: str = "Jira-like Backend API"
     PROJECT_VERSION: str = "1.0.0"
     
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root:Uday%40123@localhost/user_story_db")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "mysql+pymysql://root:Yaswanth_2826@localhost/user_story_db")
     
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key")
     ALGORITHM: str = "HS256"
@@ -27,6 +27,11 @@ class Settings:
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+
+    # Mail Settings
+    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
+    MAIL_FROM: str = os.getenv("MAIL_FROM", "admin@jira.local")
 
 settings = Settings()
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

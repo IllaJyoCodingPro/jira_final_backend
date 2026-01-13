@@ -1,7 +1,7 @@
 import secrets
 import hashlib
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -9,6 +9,10 @@ from app.database.session import get_db
 from app.models import User, PasswordResetToken
 from app.auth.auth_utils import hash_password, validate_password
 from app.utils.email_service import send_reset_email
+from app.exceptions import raise_bad_request
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Password Reset"])
 
@@ -48,9 +52,8 @@ def request_password_reset(
 
     reset_link = f"http://localhost:5173/reset-password?token={raw_token}"
 
-    print("\n" + "="*50)
-    print("RESET PASSWORD LINK:", reset_link)
-    print("="*50 + "\n")
+    logger.info(f"Generated password reset link for {user.email}")
+    logger.debug(f"RESET PASSWORD LINK: {reset_link}")
 
     background_tasks.add_task(
         send_reset_email,
@@ -58,7 +61,7 @@ def request_password_reset(
         reset_link=reset_link
     )
 
-    print("📨 Reset email queued to send")
+    logger.info("📨 Reset email queued to send")
     return {"message": "Password reset link sent if account exists"}
 
 @router.post("/reset-password")
@@ -78,10 +81,10 @@ def reset_password(
     ).first()
 
     if not reset_token:
-        raise HTTPException(400, "Invalid or expired reset link")
+        raise_bad_request("Invalid or expired reset link")
 
     if reset_token.expires_at < datetime.utcnow():
-        raise HTTPException(400, "Reset link expired")
+        raise_bad_request("Reset link expired")
 
     user = db.query(User).filter(User.id == reset_token.user_id).first()
     user.hashed_password = hash_password(data.new_password)

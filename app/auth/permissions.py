@@ -1,7 +1,10 @@
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from app.models import User, UserStory, Team, Project
+from app.exceptions import raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 def check_issue_permission(user: User, resource, action: str, db: Session = None):
     """
@@ -18,7 +21,7 @@ def check_issue_permission(user: User, resource, action: str, db: Session = None
         # Handled in route logic; keep for compatibility.
         pass
 
-    raise HTTPException(status_code=403, detail="Permission denied")
+    raise_forbidden("Permission denied")
 
 
 def can_create_issue(user: User, project_id: int, team_id: int, db: Session):

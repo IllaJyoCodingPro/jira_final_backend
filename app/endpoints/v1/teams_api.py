@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import List
 
@@ -15,6 +15,10 @@ from app.auth.permissions import (
 from app.utils.notification_service import create_notification
 from app.constants import ErrorMessages, SuccessMessages
 from app.utils.common import get_object_or_404
+from app.exceptions import raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/teams", tags=["Teams"])
 
@@ -29,10 +33,7 @@ def create_team(
     Restricted to Admins and Project Leads.
     """
     if not is_project_lead(current_user, team_data.project_id, db):
-        raise HTTPException(
-            status_code=403,
-            detail=ErrorMessages.ONLY_ADMINS_PROJECT_LEADS
-        )
+        raise_forbidden(ErrorMessages.ONLY_ADMINS_PROJECT_LEADS)
 
     new_team = team_service.create_team(db, team_data)
 
@@ -106,10 +107,7 @@ def update_team(
     old_lead_id = team_model.lead_id
 
     if not can_manage_team_members(current_user, team_model, db):
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins or Project Leads can manage team members"
-        )
+        raise_forbidden("Only Admins or Project Leads can manage team members")
 
     updated_team = team_service.update_team(db, team_id, team_update)
 
@@ -148,10 +146,7 @@ def delete_team(
     Restricted to Admins.
     """
     if not is_admin(current_user):
-        raise HTTPException(
-            status_code=403,
-            detail="Only Admins can delete teams"
-        )
+        raise_forbidden("Only Admins can delete teams")
 
     team_service.delete_team(db, team_id)
     return {"message": SuccessMessages.TEAM_DELETED}

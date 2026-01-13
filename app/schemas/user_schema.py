@@ -28,7 +28,6 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class NotificationResponse(BaseModel):
     id: int
@@ -39,7 +38,6 @@ class NotificationResponse(BaseModel):
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
 class NotificationCount(BaseModel):
     unread_count: int

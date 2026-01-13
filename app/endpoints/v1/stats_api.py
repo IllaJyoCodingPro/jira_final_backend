@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
@@ -8,6 +8,10 @@ from app.database.session import get_db
 from app.models import User, Project, ModeSwitchRequest, Team, UserStory
 from app.models.story import UserStoryActivity
 from app.auth.dependencies import get_current_user
+from app.exceptions import raise_forbidden
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/stats", tags=["Statistics"])
 
@@ -23,7 +27,7 @@ def get_master_admin_summary(
     Includes total projects, admin breakdown, and weekly project creation stats.
     """
     if not user.is_master_admin:
-        raise HTTPException(status_code=403, detail="Only Master Admin can access dashboard statistics")
+        raise_forbidden("Only Master Admin can access dashboard statistics")
 
     # 1. Total Projects
     total_projects = db.query(Project).count()
@@ -94,7 +98,7 @@ def get_mode_switch_history(
     Only accessible by Master Admin.
     """
     if not user.is_master_admin:
-        raise HTTPException(status_code=403, detail="Only Master Admin can access history")
+        raise_forbidden("Only Master Admin can access history")
 
     requests = db.query(ModeSwitchRequest).order_by(ModeSwitchRequest.created_at.desc()).all()
     
