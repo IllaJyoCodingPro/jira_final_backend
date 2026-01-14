@@ -92,6 +92,7 @@ def update_project(
         project.is_active = is_active
         
     # db.commit() handled by dependency
+    db.flush() # Ensure changes are sent to DB so refresh sees them (autoflush is False)
     db.refresh(project)
     return project
 

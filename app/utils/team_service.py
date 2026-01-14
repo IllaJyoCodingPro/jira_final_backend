@@ -80,6 +80,7 @@ def create_team(db: Session, team_data: TeamCreate):
         team.members = members
     
     # db.commit() removed - handled by session dependency
+    db.flush() # Ensure ID is generated and row exists for query
     
     # Return with eager loading to ensure serialization success
     result = db.query(Team).options(
@@ -169,6 +170,7 @@ def update_team(db: Session, team_id: int, team_update: TeamUpdate):
 
     # db.commit() handled by dependency
     # db.refresh(team)
+    db.flush() # Ensure update is visible to the following query
     
     # Return with eager loading to ensure complete data
     updated_team = db.query(Team).options(
