@@ -8,6 +8,7 @@ from app.database.session import engine
 from app.database.base import Base
 from app.config.settings import settings
 from app.utils.db_utils import create_default_admin
+from app.exceptions import BaseAPIException, base_api_exception_handler
 
 # Create tables if they don't exist
 Base.metadata.create_all(bind=engine)
@@ -16,6 +17,8 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.PROJECT_VERSION
 )
+
+app.add_exception_handler(BaseAPIException, base_api_exception_handler)
 
 # CORS Middleware
 app.add_middleware(
