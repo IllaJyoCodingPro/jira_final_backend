@@ -58,6 +58,7 @@ def signup(
     
     db.add(user)
     # db.commit() removed as per request
+    db.flush() # Ensure ID is generated
     db.refresh(user)
     
     return {"message": "User registered successfully"}
@@ -85,7 +86,7 @@ def perform_login(email: str, password: str, db: Session):
     if not user.is_master_admin:
         # If user is an ADMIN (promoted), default to ADMIN mode. Otherwise DEVELOPER.
         user.view_mode = ADMIN if user.role == ADMIN else DEVELOPER
-        db.commit()
+        # db.commit() handled by dependency
     
     token = create_access_token({
         "user_id": user.id,
@@ -192,6 +193,7 @@ def update_profile(
         user.hashed_password = hash_password(password)
     
     # db.commit() removed as per request
+    db.flush() # Apply changes to generate updated timestamps if any
     db.refresh(user)
     return user
 

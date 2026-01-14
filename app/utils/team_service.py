@@ -70,7 +70,7 @@ def create_team(db: Session, team_data: TeamCreate):
     )
     
     db.add(team)
-    db.flush() 
+    # db.flush() - removed
     
     if team_data.member_ids:
         members = db.query(User).filter(User.id.in_(team_data.member_ids)).all()
@@ -79,7 +79,7 @@ def create_team(db: Session, team_data: TeamCreate):
         # Use assignment for many-to-many to be more robust
         team.members = members
     
-    db.commit()
+    # db.commit() removed - handled by session dependency
     
     # Return with eager loading to ensure serialization success
     result = db.query(Team).options(
@@ -165,8 +165,10 @@ def update_team(db: Session, team_id: int, team_update: TeamUpdate):
         members = db.query(User).filter(User.id.in_(team_update.member_ids)).all()
         team.members = members
 
-    db.commit()
-    db.refresh(team)
+        team.members = members
+
+    # db.commit() handled by dependency
+    # db.refresh(team)
     
     # Return with eager loading to ensure complete data
     updated_team = db.query(Team).options(
@@ -211,7 +213,7 @@ def delete_team(db: Session, team_id: int):
     team = get_object_or_404(db, Team, team_id, ErrorMessages.TEAM_NOT_FOUND)
 
     db.delete(team)        # ✅ ORM instance
-    db.commit()
+    # db.commit() handled by dependency
 
     return True
 

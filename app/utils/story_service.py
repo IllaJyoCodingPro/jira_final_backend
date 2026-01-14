@@ -116,8 +116,11 @@ def create_story(db: Session, user: User, data: dict, file_path: Optional[str] =
     if new_story.assignee_id:
         notify_issue_assigned(db, new_story.assignee_id, new_story.title)
         
-    db.commit()
-    db.refresh(new_story)
+    if new_story.assignee_id:
+        notify_issue_assigned(db, new_story.assignee_id, new_story.title)
+        
+    # db.commit() handled by dependency
+    # db.refresh(new_story)
     return new_story
 
 def update_story(db: Session, user: User, story_id: int, updates: dict) -> UserStory:
@@ -174,13 +177,16 @@ def update_story(db: Session, user: User, story_id: int, updates: dict) -> UserS
     
     story_repo.create_activity(db, story.id, user.id, StoryAction.UPDATED.value, changes)
     
-    db.commit()
-    db.refresh(story)
+    
+    story_repo.create_activity(db, story.id, user.id, StoryAction.UPDATED.value, changes)
+    
+    # db.commit() handled by dependency
+    # db.refresh(story)
     return story
 
 def delete_story(db: Session, story: UserStory):
     story_repo.delete_story_record(db, story)
-    db.commit()
+    # db.commit() handled by dependency
 
 def search_stories(db: Session, user: User, query_str: str) -> List[UserStory]:
     if user.role == ADMIN:

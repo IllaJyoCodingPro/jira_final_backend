@@ -13,9 +13,16 @@ def get_db():
     """
     Database session dependency.
     Yields a database session and ensures it is closed after request.
+    Implements request-scoped transactions:
+    - Commits on success
+    - Rolls back on exception
     """
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

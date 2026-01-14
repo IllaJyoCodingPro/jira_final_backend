@@ -19,8 +19,8 @@ def create_notification(db, user_id: int, title: str, message: str):
         message=message
     )
     db.add(notification)
-    db.commit()
-    db.refresh(notification)
+    # db.commit() handled by dependency
+    # db.refresh(notification)
     return notification
 
 def notify_issue_assigned(db, user_id: int, issue_title: str):

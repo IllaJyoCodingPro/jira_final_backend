@@ -41,7 +41,7 @@ def log_activity(
     )
 
     db.add(log)
-    db.commit()
-    db.refresh(log)
-
+    # db.commit() handled by dependency
+    # db.refresh(log) - object attached to session, will autoflush if accessed
+    
     return log
