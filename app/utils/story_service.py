@@ -105,7 +105,7 @@ def create_story(db: Session, user: User, data: dict, file_path: Optional[str] =
         "team_id": team_id,
         "parent_issue_id": data.get('parent_issue_id'),
         "created_by": user.id,
-        "project_name": project.name
+
     }
     
     new_story = story_repo.create_story_record(db, create_data)

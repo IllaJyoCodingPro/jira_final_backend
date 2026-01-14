@@ -42,7 +42,7 @@ def create_project(
     if project.current_story_number is None:
             project.current_story_number = 1
     db.add(project)
-    # db.commit() removed as per request
+    db.commit() 
     db.refresh(project)
 
     # NOTE: Automatic default team creation removed by request.
@@ -90,7 +90,7 @@ def update_project(
     if is_active is not None:
         project.is_active = is_active
         
-    # db.commit() removed as per request
+    db.commit()
     db.refresh(project)
     return project
 
@@ -116,7 +116,7 @@ def delete_project(
     # Delete all stories of project
     db.query(UserStory).filter(UserStory.project_id == id).delete()
     db.delete(project)
-    # db.commit() removed as per request
+    db.commit()
     return {"message": SuccessMessages.PROJECT_DELETED}
 
 @router.get("/inactive")

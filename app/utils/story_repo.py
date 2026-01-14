@@ -55,7 +55,7 @@ def get_next_story_code(db: Session, project_id: int) -> str:
     return f"{prefix_val}-{next_num:04d}"
 
 def get_story_by_id(db: Session, story_id: int) -> Optional[UserStory]:
-    return db.query(UserStory).filter(UserStory.id == story_id).first()
+    return db.query(UserStory).options(joinedload(UserStory.project)).filter(UserStory.id == story_id).first()
 
 def get_user_story_activities(db: Session, story_id: int) -> List[Any]:
     from app.models import UserStoryActivity
@@ -85,7 +85,7 @@ def search_stories_db(
     filter_project_ids: Optional[List[int]] = None,
     apply_filters: bool = False
 ) -> List[UserStory]:
-    base_query = db.query(UserStory).filter(
+    base_query = db.query(UserStory).options(joinedload(UserStory.project)).filter(
         or_(
             UserStory.title.ilike(f"%{query_str}%"),
             UserStory.story_pointer.ilike(f"%{query_str}%"),

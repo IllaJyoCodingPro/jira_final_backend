@@ -19,9 +19,13 @@ from app.utils.common import get_object_or_404, check_project_active
 from app.schemas.story_schema import UserStoryActivityResponse
 
 from sqlalchemy.exc import SQLAlchemyError
-from app.utils import story_utils
+from app.utils import story_service as story_utils
 
 router = APIRouter(prefix="/user-stories", tags=["user-stories"])
+
+
+
+
 
 @router.get("/types", response_model=List[str])
 def get_issue_types(user: User = Depends(get_current_user)):
@@ -124,7 +128,12 @@ def create_user_story(
 
 @router.get("/{id}/history", response_model=List[UserStoryActivityResponse])
 def get_story_history(id: int, db: Session = Depends(get_db)):
-    return story_utils.get_user_story_activities(db, id)
+    """
+    Retrieves the activity history of a story.
+    """
+    from app.models.user_story_activity import UserStoryActivity
+    return db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
+
 
 @router.get("/{id}")
 def get_story_by_id(
@@ -205,8 +214,10 @@ def get_story_activity(
     
     if not can_view_issue(user, story, db):
         raise_forbidden()
-        
-    activities = story_utils.get_user_story_activities(db, id)
+    
+    from app.models.user_story_activity import UserStoryActivity
+    activities = db.query(UserStoryActivity).filter(UserStoryActivity.story_id == id).order_by(UserStoryActivity.created_at.desc()).all()
+    
     result = []
     for act in activities:
         u = db.query(User).filter(User.id == act.user_id).first() if act.user_id else None

@@ -14,7 +14,7 @@ class UserStory(Base):
         nullable=False,
         index=True
     )
-    project_name = Column(String(100), nullable=False)
+
     story_pointer = Column(String(20), unique=True, nullable=False)
 
     release_number = Column(String(50), nullable=True)
@@ -58,3 +58,6 @@ class UserStory(Base):
     parent = relationship("UserStory", remote_side=[id], backref="children")
 
 
+    @property
+    def project_name(self):
+        return self.project.name if self.project else "Unknown"

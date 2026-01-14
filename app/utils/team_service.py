@@ -7,6 +7,7 @@ from app.models import Team, User, Project
 from app.schemas import TeamCreate, TeamUpdate
 from app.constants import ErrorMessages
 from app.utils.common import get_object_or_404
+from app.utils.notification_service import create_notification
 
 def team_to_dict(t):
     """
@@ -85,6 +86,16 @@ def create_team(db: Session, team_data: TeamCreate):
         joinedload(Team.members), 
         joinedload(Team.lead)
     ).filter(Team.id == team.id).first()
+    
+    # Notification for Team Lead
+    if result.lead_id:
+        create_notification(
+            db,
+            result.lead_id,
+            "Team Lead Assignment",
+            f"You have been assigned as the Team Lead for team '{result.name}'."
+        )
+
     return team_to_dict(result)
 
 def get_team(db: Session, team_id: int):
@@ -142,9 +153,13 @@ def update_team(db: Session, team_id: int, team_update: TeamUpdate):
     if team_update.name:
         team.name = team_update.name
     
+    old_lead_id = team.lead_id
+    new_lead_id = None
+
     if team_update.lead_id is not None:
         get_object_or_404(db, User, team_update.lead_id, "New Team Lead not found")
         team.lead_id = team_update.lead_id
+        new_lead_id = team_update.lead_id
 
     if team_update.member_ids is not None:
         members = db.query(User).filter(User.id.in_(team_update.member_ids)).all()
@@ -159,6 +174,24 @@ def update_team(db: Session, team_id: int, team_update: TeamUpdate):
         joinedload(Team.lead)
     ).filter(Team.id == team_id).first()
     
+    # Notifications
+    team_name_str = updated_team.name # Use the fresh name
+    if new_lead_id is not None and new_lead_id != old_lead_id:
+        create_notification(
+            db,
+            new_lead_id,
+            "Team Lead Assignment",
+            f"You have been assigned as the Team Lead for team '{team_name_str}'."
+        )
+        
+        if old_lead_id:
+             create_notification(
+                db,
+                old_lead_id,
+                "Team Lead Removal",
+                f"You have been removed as the Team Lead for team '{team_name_str}'."
+            )
+
     return team_to_dict(updated_team)
 
 def delete_team(db: Session, team_id: int):

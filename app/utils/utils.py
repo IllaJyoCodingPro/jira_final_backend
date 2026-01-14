@@ -23,7 +23,7 @@ def story_to_dict(s):
     return {
         "id": s.id,
         "project_id": s.project_id,
-        "project_name": s.project_name,
+        "project_name": s.project.name if s.project else "Unknown",
         "story_pointer": s.story_pointer,
         "release_number": s.release_number,
         "sprint_number": s.sprint_number,
