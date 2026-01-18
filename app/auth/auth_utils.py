@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 # Reduce passlib noise
 logging.getLogger("passlib").setLevel(logging.ERROR)
 
-# ✅ Support BOTH hash formats safely
+# Support BOTH hash formats safely
 pwd_context = CryptContext(
     schemes=["bcrypt", "bcrypt_sha256"],
     deprecated="auto"

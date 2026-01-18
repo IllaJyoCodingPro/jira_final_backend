@@ -1,9 +1,9 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime
+from sqlalchemy.ext.hybrid import hybrid_property
 from app.database.base import Base
-from app.models.common import team_members
+from .team import team_members
 from app.enums import UserRole
 
 class User(Base):
@@ -14,23 +14,33 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     profile_pic = Column(String(255), nullable=True)
-    role = Column(String(20), default=UserRole.DEVELOPER.value)
+    _role = Column("role", String(20), default=UserRole.DEVELOPER.value)
     _view_mode = Column("view_mode", String(20), default=UserRole.DEVELOPER.value)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @hybrid_property
+    def role(self) -> str:
+        if self.email == "admin@jira.local":
+            return UserRole.MASTER_ADMIN.value
+        return self._role
+
+    @role.setter
+    def role(self, value: str):
+        self._role = value
 
     @property
     def is_master_admin(self) -> bool:
         return self.email == "admin@jira.local"
 
-    @property
+    @hybrid_property
     def view_mode(self) -> str:
-        if self.is_master_admin:
+        if self.email == "admin@jira.local":
             return UserRole.ADMIN.value
         return self._view_mode
 
     @view_mode.setter
     def view_mode(self, value: str):
-        if self.is_master_admin:
+        if self.email == "admin@jira.local":
             return
         self._view_mode = value
 
@@ -40,31 +50,3 @@ class User(Base):
     # Relationships for Teams
     teams = relationship("Team", secondary=team_members, back_populates="members")
     led_teams = relationship("Team", back_populates="lead")
-
-class PasswordResetToken(Base):
-    __tablename__ = "password_reset_tokens"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    hashed_token = Column(String(255), nullable=False, index=True)
-    expires_at = Column(DateTime, nullable=False)
-    used = Column(Boolean, default=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    user = relationship("User", back_populates="reset_tokens")
-
-class Notification(Base):
-    __tablename__ = "notifications"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-
-    title = Column(String(255), nullable=False)
-    message = Column(Text, nullable=False)
-
-    is_read = Column(Boolean, default=False)
-
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    user = relationship("User", back_populates="notifications")

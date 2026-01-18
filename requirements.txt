@@ -9,3 +9,5 @@ passlib[bcrypt]
 fastapi-mail>=1.4.1
 alembic
 python-multipart==0.0.20
+aiofiles>=23.2.1
+

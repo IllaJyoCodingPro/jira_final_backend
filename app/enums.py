@@ -7,6 +7,20 @@ class IssueType(str, Enum):
     BUG = "Bug"
     SUBTASK = "Subtask"
 
+    @property
+    def valid_parents(self):
+        if self == IssueType.EPIC:
+            return []  # No parent
+        if self == IssueType.STORY:
+            return [IssueType.EPIC]
+        if self == IssueType.TASK:
+            return [IssueType.STORY]
+        if self == IssueType.SUBTASK:
+            return [IssueType.TASK]
+        if self == IssueType.BUG:
+            return [IssueType.STORY, IssueType.TASK]
+        return []
+
 class Priority(str, Enum):
     HIGH = "High"
     MEDIUM = "Medium"

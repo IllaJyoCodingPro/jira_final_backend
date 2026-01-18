@@ -10,7 +10,7 @@ def check_issue_permission(user: User, resource, action: str, db: Session = None
     """
     Centralized permission check logic for issues.
     """
-    if user.role == "ADMIN":
+    if user.is_master_admin or user.role == "ADMIN":
         return True
 
     # Resource is usually a UserStory or Project.
@@ -145,7 +145,7 @@ def can_view_issue(user: User, story: UserStory, db: Session):
 
 
 def is_admin(user: User):
-    return user.role == "ADMIN"
+    return user.is_master_admin or user.role == "ADMIN"
 
 
 def is_project_lead(user: User, project_id: int, db: Session):
@@ -163,10 +163,7 @@ def can_manage_team_members(user: User, team: Team, db: Session):
     """
     Checks if user can manage members of a team (unchanged).
     """
-    if user.is_master_admin:
-        return True
-
-    if user.role == "ADMIN":
+    if user.is_master_admin or user.role == "ADMIN":
         return True
 
     if team.lead_id == user.id:

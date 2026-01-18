@@ -1,5 +1,8 @@
 from app.enums import UserRole
 
+# Auth Constants
+RESET_TOKEN_EXPIRY_MINUTES = 30
+
 # Roles
 ADMIN = UserRole.ADMIN.value
 DEVELOPER = UserRole.DEVELOPER.value
@@ -7,7 +10,7 @@ MASTER_ADMIN = UserRole.MASTER_ADMIN.value
 TESTER = UserRole.TESTER.value
 
 ALLOWED_ORIGINS = [ADMIN, DEVELOPER]
-ALL_ROLES = [ADMIN, DEVELOPER, TESTER]
+ALL_ROLES = [ADMIN, DEVELOPER, TESTER, MASTER_ADMIN]
 
 # Backward compatibility for class-based access if needed, or just preference
 class Roles:

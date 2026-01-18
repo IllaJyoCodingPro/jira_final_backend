@@ -2,41 +2,12 @@ from typing import List, Optional, Any, Dict
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
-from app.models import UserStory, Project, User, Team
-from app.enums import IssueType, StoryAction
+from app.models import UserStory, Project, Team, UserStoryActivity
+from app.enums import IssueType
 from app.constants import ErrorMessages
 from app.utils.common import get_object_or_404
 
-# Using explicit imports inside functions for models is avoided if possible, but keeping consistent with project style
-# However, for repo, we can import models at top level usually.
-
-def create_activity(db: Session, story_id: int, user_id: Optional[int], action: str, changes_dict: dict):
-    if not changes_dict and action == StoryAction.UPDATED.value:
-        return
-
-    change_lines = []
-    if action == StoryAction.CREATED.value:
-        change_lines.append("Issue Created")
-    
-    for field, vals in changes_dict.items():
-        change_lines.append(f"{field}: {vals['old']} → {vals['new']}")
-        
-    changes_text = "\n".join(change_lines)
-    
-    from app.models import UserStoryActivity
-    
-    activity = UserStoryActivity(
-        story_id=story_id,
-        user_id=user_id,
-        action=action,
-        changes=changes_text,
-        change_count=len(changes_dict)
-    )
-    db.add(activity)
-
 def get_next_story_code(db: Session, project_id: int) -> str:
-    # This might feel like logic, but it's data generation logic tied to DB state.
-    # We can keep it in repo.
     project = get_object_or_404(db, Project, project_id, ErrorMessages.PROJECT_NOT_FOUND)
     prefix_val = project.project_prefix if project.project_prefix else (project.name[:2].upper() if project.name else "XX")
     
@@ -54,11 +25,10 @@ def get_next_story_code(db: Session, project_id: int) -> str:
     next_num = max_num + 1
     return f"{prefix_val}-{next_num:04d}"
 
-def get_story_by_id(db: Session, story_id: int) -> Optional[UserStory]:
+def get_story_by_id_db(db: Session, story_id: int) -> Optional[UserStory]:
     return db.query(UserStory).options(joinedload(UserStory.project)).filter(UserStory.id == story_id).first()
 
-def get_user_story_activities(db: Session, story_id: int) -> List[Any]:
-    from app.models import UserStoryActivity
+def get_user_story_activities_db(db: Session, story_id: int) -> List[UserStoryActivity]:
     return db.query(UserStoryActivity).filter(UserStoryActivity.story_id == story_id).order_by(UserStoryActivity.created_at.desc()).all()
 
 def create_story_record(db: Session, story_data: Dict[str, Any]) -> UserStory:
@@ -69,7 +39,7 @@ def create_story_record(db: Session, story_data: Dict[str, Any]) -> UserStory:
     return new_story
 
 def update_story_record(db: Session, story: UserStory):
-    db.add(story) # Mark as modified/add to session
+    db.add(story) 
     db.flush()
     db.refresh(story)
     return story
@@ -136,7 +106,6 @@ def get_distinct_project_ids_for_assignee(db: Session, user_id: int) -> List[int
     return [pid[0] for pid in db.query(UserStory.project_id).filter(UserStory.assignee_id == user_id).distinct().all()]
 
 def get_epics_accessible_by_user(db: Session, user_id: int, owned_project_ids: List[int]) -> List[UserStory]:
-    # Complex efficient query from original logic
     member_project_ids = db.query(Team.project_id).filter(
         Team.members.any(id=user_id)
     ).subquery()
@@ -145,8 +114,8 @@ def get_epics_accessible_by_user(db: Session, user_id: int, owned_project_ids: L
         UserStory.issue_type == IssueType.EPIC.value,
         or_(
             Project.owner_id == user_id,
-            Project.id.in_(owned_project_ids), # explicit list if needed
-            Project.id.in_(member_project_ids) # subquery
+            Project.id.in_(owned_project_ids),
+            Project.id.in_(member_project_ids)
         )
     ).all()
 

@@ -11,6 +11,7 @@ from app.auth.dependencies import get_current_user
 from app.enums import UserRole
 from app.exceptions import raise_forbidden
 from app.utils.logger import get_logger
+from app.enums import UserRole
 
 logger = get_logger(__name__)
 
@@ -27,7 +28,7 @@ def get_master_admin_summary(
     Retrieves statistical summary for the Master Admin dashboard.
     Includes total projects, admin breakdown, and weekly project creation stats.
     """
-    if not user.is_master_admin:
+    if not (user.is_master_admin or user.role == UserRole.ADMIN):
         raise_forbidden("Only Master Admin can access dashboard statistics")
 
     # 1. Total Projects

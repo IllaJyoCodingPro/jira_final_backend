@@ -16,9 +16,11 @@ from app.constants import Roles
 from app.enums import UserRole
 
 
+from app.schemas.user_schema import UserResponse
+
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
-@router.get("/users")
+@router.get("/users", response_model=List[UserResponse])
 def admin_get_all_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -31,17 +33,7 @@ def admin_get_all_users(
         raise_forbidden("Only Master Admin can view all users")
     
     users = db.query(User).all()
-    return [
-        {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "role": user.role,
-            "profile_pic": user.profile_pic,
-            "created_at": user.created_at
-        }
-        for user in users
-    ]
+    return users
 
 @router.put("/users/{user_id}/role")
 def update_user_role(

@@ -64,7 +64,7 @@ def create_switch_request(
             message=f"User {user.username} has requested to switch to {requested_mode} mode."
         )
         db.add(notification)
-        # db.commit() removed as per request
+        db.commit()
 
     return {"message": "Request submitted successfully", "request_id": request.id}
 
@@ -130,7 +130,7 @@ def approve_request(
     )
     db.add(notification)
     
-    # db.commit() removed as per request
+    db.commit()
     return {"message": "Request approved and user mode updated"}
 
 @router.post("/reject/{request_id}")
@@ -161,5 +161,5 @@ def reject_request(
     )
     db.add(notification)
     
-    # db.commit() removed as per request
+    db.commit()
     return {"message": "Request rejected"}

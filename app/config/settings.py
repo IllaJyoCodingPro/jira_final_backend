@@ -41,6 +41,13 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Make UPLOAD_DIR absolute
+        if not os.path.isabs(self.UPLOAD_DIR):
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.UPLOAD_DIR = os.path.join(base_dir, self.UPLOAD_DIR)
+
 settings = Settings()
 
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

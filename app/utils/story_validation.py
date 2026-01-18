@@ -1,5 +1,6 @@
 from typing import Optional
 from sqlalchemy.orm import Session
+
 from app.models import UserStory
 from app.enums import IssueType, StoryStatus
 from app.exceptions import raise_bad_request, raise_circular_dependency
@@ -38,20 +39,15 @@ def validate_hierarchy(db: Session, parent_id: Optional[int], issue_type: str, c
     except ValueError:
         raise_bad_request(f"Parent issue has invalid type: {parent_story.issue_type}")
     
-    if current_type_enum == IssueType.EPIC:
-        raise_bad_request("Epics cannot have a parent issue.")
+    # Use valid_parents property
+    valid_parents = current_type_enum.valid_parents
     
-    if current_type_enum == IssueType.STORY and parent_type_enum != IssueType.EPIC:
-        raise_bad_request(f"Story must be a child of an Epic, not {parent_type_enum.value}.")
-        
-    if current_type_enum == IssueType.TASK and parent_type_enum != IssueType.STORY:
-        raise_bad_request(f"Task must be a child of a Story, not {parent_type_enum.value}.")
-        
-    if current_type_enum == IssueType.SUBTASK and parent_type_enum != IssueType.TASK:
-        raise_bad_request(f"Subtask must be a child of a Task, not {parent_type_enum.value}.")
-        
-    if current_type_enum == IssueType.BUG and parent_type_enum not in [IssueType.STORY, IssueType.TASK]:
-        raise_bad_request(f"Bug must be a child of a Story or Task, not {parent_type_enum.value}.")
+    if not valid_parents:
+        raise_bad_request(f"{current_type_enum.value} cannot have a parent issue.")
+
+    if parent_type_enum not in valid_parents:
+        allowed_str = " or ".join([t.value for t in valid_parents])
+        raise_bad_request(f"{current_type_enum.value} must be a child of {allowed_str}, not {parent_type_enum.value}.")
 
 def validate_status_transition(story: UserStory, new_status: str):
     if not new_status or new_status == story.status:

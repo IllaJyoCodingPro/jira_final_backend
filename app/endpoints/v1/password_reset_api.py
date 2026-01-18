@@ -3,7 +3,6 @@ import hashlib
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
 from app.database.session import get_db
 from app.models import User, PasswordResetToken
@@ -11,16 +10,13 @@ from app.auth.auth_utils import hash_password, validate_password
 from app.utils.email_service import send_reset_email
 from app.exceptions import raise_bad_request
 from app.utils.logger import get_logger
+from app.constants import RESET_TOKEN_EXPIRY_MINUTES
+from app.schemas.auth_schema import ResetPasswordRequest
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Password Reset"])
 
-RESET_TOKEN_EXPIRY_MINUTES = 30
-
-class ResetPasswordRequest(BaseModel):
-    token: str
-    new_password: str
 
 @router.post("/forgot-password")
 def request_password_reset(

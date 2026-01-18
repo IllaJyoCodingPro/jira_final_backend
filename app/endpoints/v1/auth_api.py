@@ -16,13 +16,16 @@ from app.auth.auth_utils import (
     validate_lowercase_email
 )
 from app.auth.dependencies import get_current_user
-from app.schemas.user_schema import LoginRequest, SignupRequest
+from app.schemas.user_schema import UserResponse
+from app.schemas.auth_schema import LoginRequest, SignupRequest
 from app.constants import ErrorMessages
 from app.constants import ADMIN, DEVELOPER, MASTER_ADMIN, TESTER
 from app.exceptions import raise_bad_request, raise_unauthorized, raise_forbidden
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+from app.config.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -63,7 +66,7 @@ def signup(
     
     return {"message": "User registered successfully"}
 
-@router.get("/users")
+@router.get("/users", response_model=List[UserResponse])
 def get_all_users(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user)
@@ -120,21 +123,12 @@ def login_for_access_token(
     """OAuth2 compatible token login, for Swagger UI"""
     return perform_login(form_data.username, form_data.password, db)
 
-@router.get("/me")
+@router.get("/me", response_model=UserResponse)
 def my_profile(user: User = Depends(get_current_user)):
     """
     Retrieves the current authenticated user's profile.
     """
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "role": user.role,
-        "view_mode": user.view_mode,
-        "is_master_admin": user.is_master_admin,
-        "profile_pic": user.profile_pic,
-        "created_at": user.created_at
-    }
+    return user
 
 @router.post("/switch-mode")
 def switch_mode(
@@ -168,7 +162,7 @@ def verify_current_password(
         raise_unauthorized(ErrorMessages.INVALID_PASSWORD)
     return {"valid": True}
 
-@router.put("/me")
+@router.put("/me", response_model=UserResponse)
 def update_profile(
     username: Optional[str] = Form(None),
     password: Optional[str] = Form(None),
@@ -206,7 +200,7 @@ def upload_avatar(
     """
     Uploads a profile picture for the current user.
     """
-    UPLOAD_DIR = "uploads/avatars"
+    UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "avatars")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     
     file_ext = file.filename.split(".")[-1]
