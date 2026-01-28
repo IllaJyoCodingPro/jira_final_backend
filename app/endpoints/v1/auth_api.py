@@ -60,7 +60,7 @@ def signup(
     )
     
     db.add(user)
-    # db.commit() removed as per request
+    
     db.flush() # Ensure ID is generated
     db.refresh(user)
     
@@ -147,7 +147,7 @@ def switch_mode(
         raise_bad_request(ErrorMessages.INVALID_MODE)
         
     user.view_mode = mode
-    # db.commit() removed as per request
+    
     return {"message": f"Switched to {mode} mode", "view_mode": user.view_mode}
 
 @router.post("/verify-password")
@@ -186,7 +186,7 @@ def update_profile(
         validate_password(password)
         user.hashed_password = hash_password(password)
     
-    # db.commit() removed as per request
+  
     db.flush() # Apply changes to generate updated timestamps if any
     db.refresh(user)
     return user
@@ -211,7 +211,7 @@ def upload_avatar(
         shutil.copyfileobj(file.file, f)
     
     user.profile_pic = f"/uploads/avatars/{filename}"
-    # db.commit() removed as per request
+    
     return {"profile_pic": user.profile_pic}
 
 @router.delete("/me/profile-pic")
@@ -223,7 +223,7 @@ def delete_profile_pic(
     Removes the current user's profile picture.
     """
     user.profile_pic = None
-    # db.commit() removed as per request
+    
     return {"message": "Profile picture removed"}
 
 @router.post("/logout")

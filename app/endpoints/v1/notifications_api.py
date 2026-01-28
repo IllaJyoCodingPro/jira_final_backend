@@ -24,5 +24,5 @@ def mark_as_read(notification_id: int, db: Session = Depends(get_db)):
     """
     notification = get_object_or_404(db, Notification, notification_id, ErrorMessages.NOTIFICATION_NOT_FOUND)
     notification.is_read = True
-    # db.commit() removed as per request
+    
     return {"message": "Marked as read"}

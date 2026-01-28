@@ -44,7 +44,7 @@ def request_password_reset(
     )
 
     db.add(reset_record)
-    # db.commit() removed as per request
+    
 
     reset_link = f"http://localhost:5173/reset-password?token={raw_token}"
 
@@ -86,5 +86,5 @@ def reset_password(
     user.hashed_password = hash_password(data.new_password)
     reset_token.used = True
 
-    # db.commit() removed as per request
+   
     return {"message": "Password reset successful"}

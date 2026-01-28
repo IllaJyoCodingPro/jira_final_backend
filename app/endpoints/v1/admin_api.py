@@ -62,7 +62,7 @@ def update_user_role(
         raise_bad_request("Admin cannot remove their own ADMIN role")
     
     user.role = new_role
-    # db.commit() removed as per request
+    
     return {
         "message": "User role updated successfully",
         "user_id": user.id,

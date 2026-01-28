@@ -46,9 +46,6 @@ def create_project(
     db.flush() # ensure ID is generated if needed, though refresh covers it? refresh needs flush if autocommit=False.
     db.refresh(project)
 
-    # NOTE: Automatic default team creation removed by request.
-    # If you want the UI to offer creating a team, call the Teams API separately.
-
     return project
 
 @router.put("/{id}")

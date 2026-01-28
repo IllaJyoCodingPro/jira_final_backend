@@ -22,7 +22,7 @@ class User(Base):
     def role(self) -> str:
         if self.email == "admin@jira.local":
             return UserRole.MASTER_ADMIN.value
-        return self._role
+        return self._role or UserRole.DEVELOPER.value
 
     @role.setter
     def role(self, value: str):
@@ -36,7 +36,7 @@ class User(Base):
     def view_mode(self) -> str:
         if self.email == "admin@jira.local":
             return UserRole.ADMIN.value
-        return self._view_mode
+        return self._view_mode or UserRole.DEVELOPER.value
 
     @view_mode.setter
     def view_mode(self, value: str):

@@ -51,7 +51,7 @@ def create_switch_request(
         status=ModeSwitchStatus.PENDING.value
     )
     db.add(request)
-    # db.commit() removed as per request
+    
     db.flush() # Ensure ID is generated for return
     db.refresh(request)
 
